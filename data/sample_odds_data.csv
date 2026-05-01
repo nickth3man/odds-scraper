@@ -1,0 +1,13 @@
+game_id,date,team,opponent,moneyline,spread,over_under,sportsbook
+1,2026-04-30,OKC Thunder,Boston Celtics,-180,-7.5,214.5,ESPN
+2,2026-04-30,Denver Nuggets,Lakers,150,4.5,223.5,ESPN
+3,2026-04-30,Boston Celtics,OKC Thunder,150,7.5,214.5,ESPN
+4,2026-04-30,Lakers,Denver Nuggets,-130,-4.5,223.5,ESPN
+1,2026-04-30,OKC Thunder,Boston Celtics,-175,-7.0,214.0,DraftKings
+2,2026-04-30,Denver Nuggets,Lakers,155,4.0,223.0,DraftKings
+3,2026-04-30,Boston Celtics,OKC Thunder,155,7.0,214.0,DraftKings
+4,2026-04-30,Lakers,Denver Nuggets,-125,-4.0,223.0,DraftKings
+1,2026-04-30,OKC Thunder,Boston Celtics,-178,-7.0,214.5,FanDuel
+2,2026-04-30,Denver Nuggets,Lakers,152,4.5,223.5,FanDuel
+3,2026-04-30,Boston Celtics,OKC Thunder,152,7.0,214.5,FanDuel
+4,2026-04-30,Lakers,Denver Nuggets,-128,-4.5,223.5,FanDuel

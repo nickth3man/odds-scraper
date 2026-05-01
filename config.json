@@ -1,0 +1,17 @@
+{
+    "sportsbooks": {
+      "espn": {
+        "enabled": true,
+        "url": "https://www.espn.com/nba/odds"
+      },
+      "draftkings": {
+        "enabled": true
+      },
+      "fanduel": {
+        "enabled": true
+      }
+    },
+    "sport": "NBA",
+    "season": "2025-26",
+    "export_format": "csv"
+  }
