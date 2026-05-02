@@ -14,7 +14,7 @@ from datetime import datetime
 import httpx
 
 from .http_client import HttpClient
-from .parsers import format_american_odds, format_event_date, format_line
+from .parsers import GameOdds, format_american_odds, format_event_date, format_line
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ class EspnOddsScraper:
     def __init__(self, http: HttpClient | None = None):
         self._http = http or HttpClient()
 
-    def scrape_nba_odds(self) -> list[dict]:
+    def scrape_nba_odds(self) -> list[GameOdds]:
         """Fetch live NBA odds from ESPN's header API with scoreboard fallback."""
         print('[Fetching] Live NBA odds from ESPN API...\n')
 
@@ -65,7 +65,7 @@ class EspnOddsScraper:
             print(f'[WARN] ESPN header API failed: {e}')
             return self.scrape_scoreboard_fallback()
 
-    def parse_header_events(self, events: list) -> list[dict]:
+    def parse_header_events(self, events: list) -> list[GameOdds]:
         """Parse ESPN header API event objects into the live odds schema."""
         games = []
 
@@ -120,7 +120,7 @@ class EspnOddsScraper:
 
         return games
 
-    def scrape_scoreboard_fallback(self) -> list[dict]:
+    def scrape_scoreboard_fallback(self) -> list[GameOdds]:
         """Fetch equivalent normalized odds from ESPN's scoreboard API shape."""
         try:
             response = self._http.get(
@@ -139,7 +139,7 @@ class EspnOddsScraper:
         print('[WARN] ESPN fallback: No upcoming games found\n')
         return []
 
-    def parse_scoreboard_events(self, events: list) -> list[dict]:
+    def parse_scoreboard_events(self, events: list) -> list[GameOdds]:
         games = []
 
         for event in events:

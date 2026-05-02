@@ -1,35 +1,11 @@
 import json
-import re
 from pathlib import Path
 
+from conftest import FakeDriver, FakeWebElement
+
+from odds_scraping.draftkings_scraper import DraftKingsScraper
+from odds_scraping.espn_scraper import EspnOddsScraper
 from odds_scraping.live_odds_scraper import LiveOddsScraper
-
-
-class FakeElement:
-    def __init__(self, text='', attrs=None, parent=None, children=None):
-        self.text = text
-        self._attrs = attrs or {}
-        self._parent = parent
-        self._children = children or []
-
-    def get_attribute(self, name):
-        return self._attrs.get(name)
-
-    def find_element(self, *_args):
-        if self._parent is None:
-            raise RuntimeError('no parent')
-        return self._parent
-
-    def find_elements(self, *_args):
-        return self._children
-
-
-class FakeDriver:
-    def __init__(self, team_elements):
-        self._team_elements = team_elements
-
-    def find_elements(self, *_args):
-        return self._team_elements
 
 
 def _load_fixture(filename: str) -> dict:
@@ -65,27 +41,27 @@ def test_get_all_games_resets_previous_results(monkeypatch):
 
 def test_parse_draftkings_games_extracts_spread_moneyline_and_total():
     outcome_cells = [
-        FakeElement(
+        FakeWebElement(
             text='OKC Thunder -2.5\n-110',
             attrs={'aria-label': 'OKC Thunder Spread -2.5 -110'},
         ),
-        FakeElement(
+        FakeWebElement(
             text='OKC Thunder\n-135',
             attrs={'aria-label': 'OKC Thunder Moneyline -135'},
         ),
-        FakeElement(
+        FakeWebElement(
             text='Over 223.5\n-110',
             attrs={'aria-label': 'Over 223.5 Total Points -110'},
         ),
     ]
-    game_block = FakeElement(children=outcome_cells)
+    game_block = FakeWebElement(children=outcome_cells)
     team_elements = [
-        FakeElement(text='OKC Thunder', parent=game_block),
-        FakeElement(text='Boston Celtics', parent=game_block),
+        FakeWebElement(text='OKC Thunder', parent=game_block),
+        FakeWebElement(text='Boston Celtics', parent=game_block),
     ]
     driver = FakeDriver(team_elements)
 
-    [game] = LiveOddsScraper()._parse_draftkings_games(driver)
+    [game] = DraftKingsScraper().parse_games(driver)
 
     assert game['away_team'] == 'OKC Thunder'
     assert game['home_team'] == 'Boston Celtics'
@@ -158,11 +134,11 @@ def test_scrape_espn_uses_scoreboard_fallback_when_header_api_returns_non_json(m
 
 
 def test_parse_espn_header_api_fixture():
-    scraper = LiveOddsScraper()
+    scraper = EspnOddsScraper()
     data = _load_fixture('espn_header_api.json')
     events = data['sports'][0]['leagues'][0]['events']
 
-    games = scraper._parse_espn_events(events)
+    games = scraper.parse_header_events(events)
 
     assert len(games) == 3
 
@@ -198,11 +174,11 @@ def test_parse_espn_header_api_fixture():
 
 
 def test_parse_espn_scoreboard_api_fixture():
-    scraper = LiveOddsScraper()
+    scraper = EspnOddsScraper()
     data = _load_fixture('espn_scoreboard_api.json')
     events = data.get('events', [])
 
-    games = scraper._parse_espn_scoreboard_events(events)
+    games = scraper.parse_scoreboard_events(events)
 
     assert len(games) == 1
 
@@ -230,83 +206,29 @@ def test_draftkings_fixture_no_odds_table_fails_gracefully():
 
 
 def test_select_scoreboard_odds_prefers_draftkings():
-    scraper = LiveOddsScraper()
+    scraper = EspnOddsScraper()
     odds_list = [
         {'provider': {'displayName': 'Caesars'}, 'id': '1'},
         {'provider': {'name': 'Draft Kings'}, 'id': '2'},
         {'provider': {'displayName': 'FanDuel'}, 'id': '3'},
     ]
-    selected = scraper._select_scoreboard_odds(odds_list)
+    selected = scraper.select_scoreboard_odds(odds_list)
     assert selected is not None
     assert selected['id'] == '2'
 
 
 def test_select_scoreboard_odds_falls_back_to_first():
-    scraper = LiveOddsScraper()
+    scraper = EspnOddsScraper()
     odds_list = [
         {'provider': {'displayName': 'Caesars'}, 'id': '1'},
         {'provider': {'displayName': 'FanDuel'}, 'id': '2'},
     ]
-    selected = scraper._select_scoreboard_odds(odds_list)
+    selected = scraper.select_scoreboard_odds(odds_list)
     assert selected is not None
     assert selected['id'] == '1'
 
 
 # ============ cb-market (component-builder) structure tests ============
-
-
-class FakeWebElement:
-    """Mock Selenium WebElement for testing cb-market structure."""
-
-    def __init__(self, text='', attrs=None, children=None):
-        self._text = text
-        self._attrs = attrs or {}
-        self._children = children or []
-
-    @property
-    def text(self):
-        return self._text
-
-    def get_attribute(self, name):
-        return self._attrs.get(name)
-
-    def find_element(self, *_args):
-        # Parse CSS selector args to find matching child
-        for arg in _args:
-            arg_str = str(arg)
-            # Match data-testid attribute selector: [data-testid='...']
-            match = re.search(r"data-testid='([^']+)'", arg_str)
-            if match:
-                child = self._find_child_by_testid(match.group(1))
-                if child:
-                    return child
-
-        return self._children[0] if self._children else self
-
-    def _find_child_by_testid(self, testid):
-        for child in self._children:
-            child_attrs = getattr(child, '_attrs', {})
-            if child_attrs.get('data-testid') == testid:
-                return child
-            # Recursively search children
-            result = child._find_child_by_testid(testid)
-            if result:
-                return result
-        return None
-        return self
-
-    def find_elements(self, *_args):
-        return self._children
-
-
-class FakeSeleniumDriver:
-    """Mock Selenium driver with find_elements support."""
-
-    def __init__(self, elements):
-        self._elements = elements
-
-    def find_elements(self, *_args):
-        return self._elements
 
 
 def test_parse_draftkings_cb_market_structure():
@@ -371,8 +293,8 @@ def test_parse_draftkings_cb_market_structure():
         ],
     )
 
-    driver = FakeSeleniumDriver([game_template])
-    games = LiveOddsScraper()._parse_draftkings_cb_market(driver)
+    driver = FakeDriver([game_template])
+    games = DraftKingsScraper().parse_cb_market(driver)
 
     assert len(games) == 1
     game = games[0]
@@ -387,7 +309,7 @@ def test_parse_draftkings_cb_market_structure():
 
 
 def test_parse_draftkings_games_prefers_cb_market():
-    """Test _parse_draftkings_games tries cb-market first, then falls back."""
+    """Test parse_games tries cb-market first, then falls back."""
     away_team = FakeWebElement(text='PHI 76ers', attrs={'class': 'cb-market__label-inner--parlay'})
     home_team = FakeWebElement(
         text='BOS Celtics', attrs={'class': 'cb-market__label-inner--parlay'}
@@ -410,8 +332,8 @@ def test_parse_draftkings_games_prefers_cb_market():
         children=[away_team, home_team, away_ml_btn, home_ml_btn],
     )
 
-    driver = FakeSeleniumDriver([game_template])
-    games = LiveOddsScraper()._parse_draftkings_games(driver)
+    driver = FakeDriver([game_template])
+    games = DraftKingsScraper().parse_games(driver)
 
     assert len(games) == 1
     assert games[0]['away_team'] == 'PHI 76ers'
@@ -426,8 +348,8 @@ def test_parse_draftkings_cb_market_skips_incomplete_games():
         children=[away_team],
     )
 
-    driver = FakeSeleniumDriver([game_template])
-    games = LiveOddsScraper()._parse_draftkings_cb_market(driver)
+    driver = FakeDriver([game_template])
+    games = DraftKingsScraper().parse_cb_market(driver)
     assert len(games) == 0
 
 
@@ -463,8 +385,8 @@ def test_parse_draftkings_cb_market_multiple_games():
         children=[away_team2, home_team2, away_ml2],
     )
 
-    driver = FakeSeleniumDriver([template1, template2])
-    games = LiveOddsScraper()._parse_draftkings_cb_market(driver)
+    driver = FakeDriver([template1, template2])
+    games = DraftKingsScraper().parse_cb_market(driver)
 
     assert len(games) == 2
     assert games[0]['matchup'] == 'PHI 76ers @ BOS Celtics'
@@ -503,8 +425,8 @@ def test_parse_futures_champion_extracts_team_and_odds():
         children=[btn1, btn2, btn3],
     )
 
-    driver = FakeSeleniumDriver([template])
-    results = LiveOddsScraper()._parse_draftkings_futures_champion(driver)
+    driver = FakeDriver([template])
+    results = DraftKingsScraper().parse_futures_champion(driver)
 
     assert len(results) == 3
     assert results[0] == {
@@ -521,8 +443,8 @@ def test_parse_futures_champion_extracts_team_and_odds():
 
 def test_parse_futures_champion_empty_when_no_button_elements():
     """Return empty list when no champion market buttons exist."""
-    driver = FakeSeleniumDriver([])
-    results = LiveOddsScraper()._parse_draftkings_futures_champion(driver)
+    driver = FakeDriver([])
+    results = DraftKingsScraper().parse_futures_champion(driver)
     assert results == []
 
 
@@ -538,8 +460,8 @@ def test_parse_futures_category_passes_bet_type():
         attrs={'class': 'cb-market__template--2-columns'},
         children=[btn],
     )
-    driver = FakeSeleniumDriver([template])
-    results = LiveOddsScraper()._parse_draftkings_futures_category(driver, 'playoffs')
+    driver = FakeDriver([template])
+    results = DraftKingsScraper().parse_futures_category(driver, 'playoffs')
 
     assert len(results) == 1
     assert results[0]['bet_type'] == 'playoffs'
