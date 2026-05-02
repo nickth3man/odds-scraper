@@ -1,0 +1,812 @@
+diff --git a/odds_scraping/config.py b/odds_scraping/config.py
+new file mode 100644
+index 0000000..715e02f
+--- /dev/null
++++ b/odds_scraping/config.py
+@@ -0,0 +1,21 @@
++"""Source-specific URLs and request parameters for odds adapters."""
++
++from __future__ import annotations
++
++ESPN_API_URL = 'https://site.web.api.espn.com/apis/v2/scoreboard/header'
++ESPN_SCOREBOARD_API_URL = (
++    'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard'
++)
++ESPN_API_PARAMS: dict[str, str] = {
++    'sport': 'basketball',
++    'league': 'nba',
++    'region': 'us',
++    'lang': 'en',
++    'contentorigin': 'espn',
++    'buyWindow': '1m',
++    'showAirings': 'buy,live,replay',
++    'tz': 'America/New_York',
++}
++
++DK_BASE_URL = 'https://sportsbook.draftkings.com/leagues/basketball/nba'
++DK_FUTURES_CHAMPION_URL = DK_BASE_URL + '?category=futures&subcategory=champion'
+diff --git a/odds_scraping/draftkings_scraper.py b/odds_scraping/draftkings_scraper.py
+index 16bf170..633603a 100644
+--- a/odds_scraping/draftkings_scraper.py
++++ b/odds_scraping/draftkings_scraper.py
+@@ -192,7 +192,8 @@
+ from datetime import datetime
+ from typing import TYPE_CHECKING
+ 
+-from .parsers import first_american_odds, first_signed_number, first_total
++from .config import DK_BASE_URL, DK_FUTURES_CHAMPION_URL
++from .parsers import GameOdds, first_american_odds, first_signed_number, first_total
+ 
+ if TYPE_CHECKING:
+     from parsel import Selector as HtmlSelector
+@@ -229,7 +230,32 @@ class _ByFallback:
+ class DraftKingsScraper:
+     """Scrape and parse DraftKings NBA odds."""
+ 
+-    def scrape_odds(self) -> list[dict]:
++    @staticmethod
++    def _create_driver():
++        """Create a headless Chrome driver with anti-detection settings."""
++        from selenium import webdriver
++        from selenium.webdriver.chrome.options import Options
++
++        chrome_options = Options()
++        chrome_options.add_argument('--headless=new')
++        chrome_options.add_argument('--window-size=1920,1080')
++        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
++        chrome_options.add_argument(
++            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
++            'AppleWebKit/537.36 (KHTML, like Gecko) '
++            'Chrome/124.0.0.0 Safari/537.36'
++        )
++        chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
++        chrome_options.add_experimental_option('useAutomationExtension', False)
++
++        driver = webdriver.Chrome(options=chrome_options)
++        driver.execute_cdp_cmd(
++            'Page.addScriptToEvaluateOnNewDocument',
++            {'source': 'Object.defineProperty(navigator, "webdriver", {get: () => undefined})'},
++        )
++        return driver
++
++    def scrape_odds(self) -> list[GameOdds]:
+         """
+         Scrape live odds from DraftKings using Selenium.
+ 
+@@ -241,9 +267,7 @@ def scrape_odds(self) -> list[dict]:
+             print('[WARN] Selenium not available. Install with: pip install selenium')
+             return []
+ 
+-        from selenium import webdriver
+         from selenium.common.exceptions import TimeoutException
+-        from selenium.webdriver.chrome.options import Options
+         from selenium.webdriver.support import expected_conditions as EC  # noqa: N812
+         from selenium.webdriver.support.ui import WebDriverWait
+ 
+@@ -251,26 +275,9 @@ def scrape_odds(self) -> list[dict]:
+ 
+         driver = None
+         try:
+-            chrome_options = Options()
+-            chrome_options.add_argument('--headless=new')
+-            chrome_options.add_argument('--window-size=1920,1080')
+-            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+-            chrome_options.add_argument(
+-                '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+-                'AppleWebKit/537.36 (KHTML, like Gecko) '
+-                'Chrome/124.0.0.0 Safari/537.36'
+-            )
+-            chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
+-            chrome_options.add_experimental_option('useAutomationExtension', False)
+-
+-            # Selenium Manager (built into Selenium 4.6+) handles ChromeDriver automatically
+-            driver = webdriver.Chrome(options=chrome_options)
+-            driver.execute_cdp_cmd(
+-                'Page.addScriptToEvaluateOnNewDocument',
+-                {'source': 'Object.defineProperty(navigator, "webdriver", {get: () => undefined})'},
+-            )
++            driver = self._create_driver()
+ 
+-            driver.get('https://sportsbook.draftkings.com/leagues/basketball/nba')
++            driver.get(DK_BASE_URL)
+ 
+             print('Waiting for DraftKings to load (20 seconds)...')
+ 
+@@ -318,9 +325,7 @@ def scrape_futures_champion(self) -> list[dict]:
+             print('[WARN] Selenium not available. Install with: pip install selenium')
+             return []
+ 
+-        from selenium import webdriver
+         from selenium.common.exceptions import TimeoutException
+-        from selenium.webdriver.chrome.options import Options
+         from selenium.webdriver.support import expected_conditions as EC  # noqa: N812
+         from selenium.webdriver.support.ui import WebDriverWait
+ 
+@@ -328,18 +333,8 @@ def scrape_futures_champion(self) -> list[dict]:
+ 
+         driver = None
+         try:
+-            chrome_options = Options()
+-            chrome_options.add_argument('--headless=new')
+-            chrome_options.add_argument('--window-size=1920,1080')
+-            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+-            chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
+-            chrome_options.add_experimental_option('useAutomationExtension', False)
+-
+-            driver = webdriver.Chrome(options=chrome_options)
+-            driver.get(
+-                'https://sportsbook.draftkings.com/leagues/basketball/nba'
+-                '?category=futures&subcategory=champion'
+-            )
++            driver = self._create_driver()
++            driver.get(DK_FUTURES_CHAMPION_URL)
+ 
+             print('Waiting for DraftKings to load (15 seconds)...')
+ 
+@@ -372,7 +367,7 @@ def scrape_futures_champion(self) -> list[dict]:
+             if driver:
+                 driver.quit()
+ 
+-    def parse_games(self, driver) -> list[dict]:
++    def parse_games(self, driver) -> list[GameOdds]:
+         """Parse games from DraftKings page using Selenium.
+ 
+         When parsel is available, HTML is extracted once from the driver and
+@@ -394,7 +389,7 @@ def parse_games(self, driver) -> list[dict]:
+         return self.parse_event_cells(driver)
+ 
+     @staticmethod
+-    def parse_html(html: str) -> list[dict]:
++    def parse_html(html: str) -> list[GameOdds]:
+         """Parse DraftKings NBA page HTML using parsel CSS selectors.
+ 
+         Accepts raw HTML string (e.g. from ``driver.page_source``) and returns
+@@ -451,7 +446,7 @@ def _get_btn(sel_scope, testid_fragment: str, attr: str) -> str:
+ 
+         return games
+ 
+-    def parse_cb_market(self, driver) -> list[dict]:
++    def parse_cb_market(self, driver) -> list[GameOdds]:
+         """Parse DraftKings games using cb-market__template structure."""
+         games = []
+ 
+@@ -486,10 +481,6 @@ def parse_cb_market(self, driver) -> list[dict]:
+                         By.CSS_SELECTOR, "button[data-testid*='component-builder-market-button']"
+                     )
+ 
+-                    spread = 'N/A'
+-                    moneyline = 'N/A'
+-                    ou = 'N/A'
+-
+                     away_spread = 'N/A'
+                     home_spread = 'N/A'
+                     away_ml = 'N/A'
+@@ -515,17 +506,14 @@ def parse_cb_market(self, driver) -> list[dict]:
+                             title = title_elem.text.strip() if title_elem else ''
+ 
+                             if '0HC' in testid:
+-                                # Spread — first is away, second is home
+                                 if away_spread == 'N/A':
+                                     away_spread = points
+                                 elif home_spread == 'N/A':
+                                     home_spread = points
+                             elif '0OU' in testid:
+-                                # Total — extract the number
+                                 if over_total == 'N/A' and title.upper() == 'O':
+                                     over_total = points
+                             elif '0ML' in testid:
+-                                # Moneyline — first is away, second is home
+                                 if away_ml == 'N/A':
+                                     away_ml = odds
+                                 elif home_ml == 'N/A':
+@@ -534,21 +522,16 @@ def parse_cb_market(self, driver) -> list[dict]:
+                         except (AttributeError, ValueError):
+                             continue
+ 
+-                    # Use away team perspective for consistency
+-                    spread = away_spread if away_spread != 'N/A' else 'N/A'
+-                    moneyline = away_ml if away_ml != 'N/A' else 'N/A'
+-                    ou = over_total if over_total != 'N/A' else 'N/A'
+-
+                     games.append(
+                         {
+                             'date': datetime.now().strftime('%Y-%m-%d'),
+                             'home_team': home_team,
+                             'away_team': away_team,
+                             'matchup': f'{away_team} @ {home_team}',
+-                            'spread': spread,
+-                            'moneyline': moneyline,
++                            'spread': away_spread,
++                            'moneyline': away_ml,
+                             'home_moneyline': home_ml,
+-                            'over_under': ou,
++                            'over_under': over_total,
+                             'source': 'DraftKings',
+                         }
+                     )
+@@ -563,7 +546,7 @@ def parse_cb_market(self, driver) -> list[dict]:
+             logger.warning('Error parsing DraftKings cb-market structure: %s', e)
+             return []
+ 
+-    def parse_event_cells(self, driver) -> list[dict]:
++    def parse_event_cells(self, driver) -> list[GameOdds]:
+         """Parse DraftKings games using legacy event-cell structure."""
+         games = []
+ 
+@@ -622,6 +605,7 @@ def parse_event_cells(self, driver) -> list[dict]:
+                             'matchup': f'{away_team} @ {home_team}',
+                             'spread': spread,
+                             'moneyline': moneyline,
++                            'home_moneyline': 'N/A',
+                             'over_under': ou,
+                             'source': 'DraftKings',
+                         }
+diff --git a/odds_scraping/espn_scraper.py b/odds_scraping/espn_scraper.py
+index dfbb807..171e8c6 100644
+--- a/odds_scraping/espn_scraper.py
++++ b/odds_scraping/espn_scraper.py
+@@ -13,24 +13,12 @@
+ 
+ import httpx
+ 
++from .config import ESPN_API_PARAMS, ESPN_API_URL, ESPN_SCOREBOARD_API_URL
+ from .http_client import HttpClient
+-from .parsers import format_american_odds, format_event_date, format_line
++from .parsers import GameOdds, format_american_odds, format_event_date, format_line
+ 
+ logger = logging.getLogger(__name__)
+ 
+-_ESPN_API_URL = 'https://site.web.api.espn.com/apis/v2/scoreboard/header'
+-_ESPN_SCOREBOARD_API_URL = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard'
+-_ESPN_API_PARAMS = {
+-    'sport': 'basketball',
+-    'league': 'nba',
+-    'region': 'us',
+-    'lang': 'en',
+-    'contentorigin': 'espn',
+-    'buyWindow': '1m',
+-    'showAirings': 'buy,live,replay',
+-    'tz': 'America/New_York',
+-}
+-
+ 
+ class EspnOddsScraper:
+     """Fetch and normalize NBA odds from ESPN JSON APIs."""
+@@ -38,14 +26,14 @@ class EspnOddsScraper:
+     def __init__(self, http: HttpClient | None = None):
+         self._http = http or HttpClient()
+ 
+-    def scrape_nba_odds(self) -> list[dict]:
++    def scrape_nba_odds(self) -> list[GameOdds]:
+         """Fetch live NBA odds from ESPN's header API with scoreboard fallback."""
+         print('[Fetching] Live NBA odds from ESPN API...\n')
+ 
+         try:
+             response = self._http.get(
+-                _ESPN_API_URL,
+-                params=_ESPN_API_PARAMS,
++                ESPN_API_URL,
++                params=ESPN_API_PARAMS,
+             )
+             data = response.json()
+ 
+@@ -65,7 +53,7 @@ def scrape_nba_odds(self) -> list[dict]:
+             print(f'[WARN] ESPN header API failed: {e}')
+             return self.scrape_scoreboard_fallback()
+ 
+-    def parse_header_events(self, events: list) -> list[dict]:
++    def parse_header_events(self, events: list) -> list[GameOdds]:
+         """Parse ESPN header API event objects into the live odds schema."""
+         games = []
+ 
+@@ -120,11 +108,11 @@ def parse_header_events(self, events: list) -> list[dict]:
+ 
+         return games
+ 
+-    def scrape_scoreboard_fallback(self) -> list[dict]:
++    def scrape_scoreboard_fallback(self) -> list[GameOdds]:
+         """Fetch equivalent normalized odds from ESPN's scoreboard API shape."""
+         try:
+             response = self._http.get(
+-                _ESPN_SCOREBOARD_API_URL,
++                ESPN_SCOREBOARD_API_URL,
+                 params={'dates': datetime.now().strftime('%Y%m%d'), 'limit': 100},
+             )
+             games = self.parse_scoreboard_events(response.json().get('events', []))
+@@ -139,7 +127,7 @@ def scrape_scoreboard_fallback(self) -> list[dict]:
+         print('[WARN] ESPN fallback: No upcoming games found\n')
+         return []
+ 
+-    def parse_scoreboard_events(self, events: list) -> list[dict]:
++    def parse_scoreboard_events(self, events: list) -> list[GameOdds]:
+         games = []
+ 
+         for event in events:
+diff --git a/odds_scraping/live_odds_scraper.py b/odds_scraping/live_odds_scraper.py
+index 8a086eb..e12e84e 100644
+--- a/odds_scraping/live_odds_scraper.py
++++ b/odds_scraping/live_odds_scraper.py
+@@ -12,95 +12,29 @@
+ class LiveOddsScraper:
+     """Scrape live odds from ESPN and DraftKings for real games."""
+ 
+-    def __init__(self):
+-        self.headers = {
+-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+-            'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+-        }
+-        self._http = HttpClient()
++    def __init__(self, http: HttpClient | None = None):
++        self._http = http or HttpClient()
++        self._espn = EspnOddsScraper(self._http)
++        self._dk = DraftKingsScraper()
+         self.all_games = []
+ 
+-    def _espn_scraper(self) -> EspnOddsScraper:
+-        return EspnOddsScraper(self._http)
+-
+-    def _draftkings_scraper(self) -> DraftKingsScraper:
+-        return DraftKingsScraper()
+-
+     # ============ ESPN SCRAPING (JSON API) ============
+ 
+     def scrape_espn_nba_odds(self):
+         """Scrape live NBA odds from ESPN's JSON API."""
+-        games = self._espn_scraper().scrape_nba_odds()
+-        self.all_games.extend(games)
+-        return games
+-
+-    def _parse_espn_events(self, events: list) -> list:
+-        """Parse game data from ESPN JSON API events list."""
+-        return self._espn_scraper().parse_header_events(events)
+-
+-    def _scrape_espn_scoreboard_fallback(self) -> list:
+-        """Fetch equivalent normalized odds from ESPN's scoreboard API shape."""
+-        games = self._espn_scraper().scrape_scoreboard_fallback()
++        games = self._espn.scrape_nba_odds()
+         self.all_games.extend(games)
+         return games
+ 
+-    def _parse_espn_scoreboard_events(self, events: list) -> list:
+-        return self._espn_scraper().parse_scoreboard_events(events)
+-
+-    def _select_scoreboard_odds(self, odds_list: list) -> dict | None:
+-        return self._espn_scraper().select_scoreboard_odds(odds_list)
+-
+     # ============ DRAFTKINGS SCRAPING (Selenium) ============
+ 
+     def scrape_draftkings_odds(self):
+         """Scrape live odds from DraftKings using Selenium."""
+-        games = self._draftkings_scraper().scrape_odds()
++        games = self._dk.scrape_odds()
+         if games:
+             self.all_games.extend(games)
+         return games
+ 
+-    @staticmethod
+-    def parse_draftkings_html(html: str) -> list:
+-        """Parse DraftKings NBA page HTML using parsel CSS selectors."""
+-        return DraftKingsScraper.parse_html(html)
+-
+-    def _parse_draftkings_games(self, driver) -> list:
+-        """Parse games from DraftKings page using Selenium."""
+-        return self._draftkings_scraper().parse_games(driver)
+-
+-    def _parse_draftkings_cb_market(self, driver) -> list:
+-        """Parse DraftKings games using cb-market__template structure."""
+-        return self._draftkings_scraper().parse_cb_market(driver)
+-
+-    def _parse_draftkings_event_cells(self, driver) -> list:
+-        """Parse DraftKings games using legacy event-cell structure."""
+-        return self._draftkings_scraper().parse_event_cells(driver)
+-
+-    def _parse_draftkings_markets(self, outcome_cells, team_name: str) -> tuple[str, str, str]:
+-        return self._draftkings_scraper().parse_markets(outcome_cells, team_name)
+-
+-    # ============ DRAFTKINGS FUTURES PARSING ============
+-
+-    def _parse_draftkings_futures_category(self, driver, bet_type: str) -> list:
+-        return self._draftkings_scraper().parse_futures_category(driver, bet_type)
+-
+-    def _parse_draftkings_futures_champion(self, driver) -> list:
+-        return self._parse_draftkings_futures_category(driver, 'champion')
+-
+-    def _parse_draftkings_futures_playoffs(self, driver) -> list:
+-        return self._parse_draftkings_futures_category(driver, 'playoffs')
+-
+-    def _parse_draftkings_futures_conference(self, driver) -> list:
+-        return self._parse_draftkings_futures_category(driver, 'conference')
+-
+-    def _parse_draftkings_futures_series_props(self, driver) -> list:
+-        return self._parse_draftkings_futures_category(driver, 'series_props')
+-
+-    def _parse_draftkings_futures_series_player_props(self, driver) -> list:
+-        return self._parse_draftkings_futures_category(driver, 'series_player_props')
+-
+-    def _parse_draftkings_futures_seed_to_win(self, driver) -> list:
+-        return self._parse_draftkings_futures_category(driver, 'seed_to_win')
+     # ============ EXPORT & DISPLAY ============
+ 
+     def export_to_csv(self, games, filename='data/live_odds.csv'):
+diff --git a/odds_scraping/parsers.py b/odds_scraping/parsers.py
+index 7d1f54b..c1e07f0 100644
+--- a/odds_scraping/parsers.py
++++ b/odds_scraping/parsers.py
+@@ -5,6 +5,21 @@
+ import logging
+ import re
+ from datetime import datetime
++from typing import TypedDict
++
++
++class GameOdds(TypedDict):
++    """Canonical schema for a single game's odds from any source."""
++
++    date: str
++    home_team: str
++    away_team: str
++    matchup: str
++    spread: str
++    moneyline: str
++    home_moneyline: str
++    over_under: str
++    source: str
+ 
+ logger = logging.getLogger(__name__)
+ 
+diff --git a/tests/conftest.py b/tests/conftest.py
+new file mode 100644
+index 0000000..a7d851f
+--- /dev/null
++++ b/tests/conftest.py
+@@ -0,0 +1,67 @@
++"""Shared pytest fixtures and mock helpers for the odds-scraper test suite."""
++
++from __future__ import annotations
++
++import re
++
++
++class FakeWebElement:
++    """Unified mock for a Selenium WebElement.
++
++    Supports both upward DOM traversal (via XPATH — returns parent) and
++    downward lookup by data-testid (via CSS selector — returns matching child).
++    """
++
++    def __init__(self, text='', attrs=None, parent=None, children=None):
++        self._text = text
++        self._attrs = attrs or {}
++        self._parent = parent
++        self._children = children or []
++
++    @property
++    def text(self):
++        return self._text
++
++    def get_attribute(self, name):
++        return self._attrs.get(name)
++
++    def find_element(self, by=None, value=None, *_extra):
++        by_str = str(by or '').lower()
++
++        # XPATH: simulate ancestor traversal by returning the parent element
++        if 'xpath' in by_str:
++            if self._parent is not None:
++                return self._parent
++            raise RuntimeError('no parent element')
++
++        # CSS selector: look up a child by data-testid attribute
++        selector = str(value or '')
++        match = re.search(r"data-testid='([^']+)'", selector)
++        if match:
++            found = self._find_child_by_testid(match.group(1))
++            if found:
++                return found
++
++        return self._children[0] if self._children else self
++
++    def _find_child_by_testid(self, testid: str) -> FakeWebElement | None:
++        for child in self._children:
++            if getattr(child, '_attrs', {}).get('data-testid') == testid:
++                return child
++            result = child._find_child_by_testid(testid)
++            if result:
++                return result
++        return None
++
++    def find_elements(self, *_args):
++        return self._children
++
++
++class FakeDriver:
++    """Mock Selenium WebDriver that returns a fixed list of elements."""
++
++    def __init__(self, elements):
++        self._elements = elements
++
++    def find_elements(self, *_args):
++        return self._elements
+diff --git a/tests/test_live_odds_scraper.py b/tests/test_live_odds_scraper.py
+index f9e7145..cc8104e 100644
+--- a/tests/test_live_odds_scraper.py
++++ b/tests/test_live_odds_scraper.py
+@@ -1,35 +1,11 @@
+ import json
+-import re
+ from pathlib import Path
+ 
+-from odds_scraping.live_odds_scraper import LiveOddsScraper
+-
+-
+-class FakeElement:
+-    def __init__(self, text='', attrs=None, parent=None, children=None):
+-        self.text = text
+-        self._attrs = attrs or {}
+-        self._parent = parent
+-        self._children = children or []
+-
+-    def get_attribute(self, name):
+-        return self._attrs.get(name)
+-
+-    def find_element(self, *_args):
+-        if self._parent is None:
+-            raise RuntimeError('no parent')
+-        return self._parent
+-
+-    def find_elements(self, *_args):
+-        return self._children
+-
++from conftest import FakeDriver, FakeWebElement
+ 
+-class FakeDriver:
+-    def __init__(self, team_elements):
+-        self._team_elements = team_elements
+-
+-    def find_elements(self, *_args):
+-        return self._team_elements
++from odds_scraping.draftkings_scraper import DraftKingsScraper
++from odds_scraping.espn_scraper import EspnOddsScraper
++from odds_scraping.live_odds_scraper import LiveOddsScraper
+ 
+ 
+ def _load_fixture(filename: str) -> dict:
+@@ -65,27 +41,27 @@ def scrape_espn(self):
+ 
+ def test_parse_draftkings_games_extracts_spread_moneyline_and_total():
+     outcome_cells = [
+-        FakeElement(
++        FakeWebElement(
+             text='OKC Thunder -2.5\n-110',
+             attrs={'aria-label': 'OKC Thunder Spread -2.5 -110'},
+         ),
+-        FakeElement(
++        FakeWebElement(
+             text='OKC Thunder\n-135',
+             attrs={'aria-label': 'OKC Thunder Moneyline -135'},
+         ),
+-        FakeElement(
++        FakeWebElement(
+             text='Over 223.5\n-110',
+             attrs={'aria-label': 'Over 223.5 Total Points -110'},
+         ),
+     ]
+-    game_block = FakeElement(children=outcome_cells)
++    game_block = FakeWebElement(children=outcome_cells)
+     team_elements = [
+-        FakeElement(text='OKC Thunder', parent=game_block),
+-        FakeElement(text='Boston Celtics', parent=game_block),
++        FakeWebElement(text='OKC Thunder', parent=game_block),
++        FakeWebElement(text='Boston Celtics', parent=game_block),
+     ]
+     driver = FakeDriver(team_elements)
+ 
+-    [game] = LiveOddsScraper()._parse_draftkings_games(driver)
++    [game] = DraftKingsScraper().parse_games(driver)
+ 
+     assert game['away_team'] == 'OKC Thunder'
+     assert game['home_team'] == 'Boston Celtics'
+@@ -158,11 +134,11 @@ def json(self):
+ 
+ 
+ def test_parse_espn_header_api_fixture():
+-    scraper = LiveOddsScraper()
++    scraper = EspnOddsScraper()
+     data = _load_fixture('espn_header_api.json')
+     events = data['sports'][0]['leagues'][0]['events']
+ 
+-    games = scraper._parse_espn_events(events)
++    games = scraper.parse_header_events(events)
+ 
+     assert len(games) == 3
+ 
+@@ -198,11 +174,11 @@ def test_parse_espn_header_api_fixture():
+ 
+ 
+ def test_parse_espn_scoreboard_api_fixture():
+-    scraper = LiveOddsScraper()
++    scraper = EspnOddsScraper()
+     data = _load_fixture('espn_scoreboard_api.json')
+     events = data.get('events', [])
+ 
+-    games = scraper._parse_espn_scoreboard_events(events)
++    games = scraper.parse_scoreboard_events(events)
+ 
+     assert len(games) == 1
+ 
+@@ -230,24 +206,24 @@ def test_draftkings_fixture_no_odds_table_fails_gracefully():
+ 
+ 
+ def test_select_scoreboard_odds_prefers_draftkings():
+-    scraper = LiveOddsScraper()
++    scraper = EspnOddsScraper()
+     odds_list = [
+         {'provider': {'displayName': 'Caesars'}, 'id': '1'},
+         {'provider': {'name': 'Draft Kings'}, 'id': '2'},
+         {'provider': {'displayName': 'FanDuel'}, 'id': '3'},
+     ]
+-    selected = scraper._select_scoreboard_odds(odds_list)
++    selected = scraper.select_scoreboard_odds(odds_list)
+     assert selected is not None
+     assert selected['id'] == '2'
+ 
+ 
+ def test_select_scoreboard_odds_falls_back_to_first():
+-    scraper = LiveOddsScraper()
++    scraper = EspnOddsScraper()
+     odds_list = [
+         {'provider': {'displayName': 'Caesars'}, 'id': '1'},
+         {'provider': {'displayName': 'FanDuel'}, 'id': '2'},
+     ]
+-    selected = scraper._select_scoreboard_odds(odds_list)
++    selected = scraper.select_scoreboard_odds(odds_list)
+     assert selected is not None
+     assert selected['id'] == '1'
+ 
+@@ -255,60 +231,6 @@ def test_select_scoreboard_odds_falls_back_to_first():
+ # ============ cb-market (component-builder) structure tests ============
+ 
+ 
+-class FakeWebElement:
+-    """Mock Selenium WebElement for testing cb-market structure."""
+-
+-    def __init__(self, text='', attrs=None, children=None):
+-        self._text = text
+-        self._attrs = attrs or {}
+-        self._children = children or []
+-
+-    @property
+-    def text(self):
+-        return self._text
+-
+-    def get_attribute(self, name):
+-        return self._attrs.get(name)
+-
+-    def find_element(self, *_args):
+-        # Parse CSS selector args to find matching child
+-        for arg in _args:
+-            arg_str = str(arg)
+-            # Match data-testid attribute selector: [data-testid='...']
+-            match = re.search(r"data-testid='([^']+)'", arg_str)
+-            if match:
+-                child = self._find_child_by_testid(match.group(1))
+-                if child:
+-                    return child
+-
+-        return self._children[0] if self._children else self
+-
+-    def _find_child_by_testid(self, testid):
+-        for child in self._children:
+-            child_attrs = getattr(child, '_attrs', {})
+-            if child_attrs.get('data-testid') == testid:
+-                return child
+-            # Recursively search children
+-            result = child._find_child_by_testid(testid)
+-            if result:
+-                return result
+-        return None
+-        return self
+-
+-    def find_elements(self, *_args):
+-        return self._children
+-
+-
+-class FakeSeleniumDriver:
+-    """Mock Selenium driver with find_elements support."""
+-
+-    def __init__(self, elements):
+-        self._elements = elements
+-
+-    def find_elements(self, *_args):
+-        return self._elements
+-
+-
+ def test_parse_draftkings_cb_market_structure():
+     """Test parsing DraftKings cb-market template (component-builder layout)."""
+     away_spread_btn = FakeWebElement(
+@@ -371,8 +293,8 @@ def test_parse_draftkings_cb_market_structure():
+         ],
+     )
+ 
+-    driver = FakeSeleniumDriver([game_template])
+-    games = LiveOddsScraper()._parse_draftkings_cb_market(driver)
++    driver = FakeDriver([game_template])
++    games = DraftKingsScraper().parse_cb_market(driver)
+ 
+     assert len(games) == 1
+     game = games[0]
+@@ -387,7 +309,7 @@ def test_parse_draftkings_cb_market_structure():
+ 
+ 
+ def test_parse_draftkings_games_prefers_cb_market():
+-    """Test _parse_draftkings_games tries cb-market first, then falls back."""
++    """Test parse_games tries cb-market first, then falls back."""
+     away_team = FakeWebElement(text='PHI 76ers', attrs={'class': 'cb-market__label-inner--parlay'})
+     home_team = FakeWebElement(
+         text='BOS Celtics', attrs={'class': 'cb-market__label-inner--parlay'}
+@@ -410,8 +332,8 @@ def test_parse_draftkings_games_prefers_cb_market():
+         children=[away_team, home_team, away_ml_btn, home_ml_btn],
+     )
+ 
+-    driver = FakeSeleniumDriver([game_template])
+-    games = LiveOddsScraper()._parse_draftkings_games(driver)
++    driver = FakeDriver([game_template])
++    games = DraftKingsScraper().parse_games(driver)
+ 
+     assert len(games) == 1
+     assert games[0]['away_team'] == 'PHI 76ers'
+@@ -426,8 +348,8 @@ def test_parse_draftkings_cb_market_skips_incomplete_games():
+         children=[away_team],
+     )
+ 
+-    driver = FakeSeleniumDriver([game_template])
+-    games = LiveOddsScraper()._parse_draftkings_cb_market(driver)
++    driver = FakeDriver([game_template])
++    games = DraftKingsScraper().parse_cb_market(driver)
+     assert len(games) == 0
+ 
+ 
+@@ -463,8 +385,8 @@ def test_parse_draftkings_cb_market_multiple_games():
+         children=[away_team2, home_team2, away_ml2],
+     )
+ 
+-    driver = FakeSeleniumDriver([template1, template2])
+-    games = LiveOddsScraper()._parse_draftkings_cb_market(driver)
++    driver = FakeDriver([template1, template2])
++    games = DraftKingsScraper().parse_cb_market(driver)
+ 
+     assert len(games) == 2
+     assert games[0]['matchup'] == 'PHI 76ers @ BOS Celtics'
+@@ -503,8 +425,8 @@ def test_parse_futures_champion_extracts_team_and_odds():
+         children=[btn1, btn2, btn3],
+     )
+ 
+-    driver = FakeSeleniumDriver([template])
+-    results = LiveOddsScraper()._parse_draftkings_futures_champion(driver)
++    driver = FakeDriver([template])
++    results = DraftKingsScraper().parse_futures_champion(driver)
+ 
+     assert len(results) == 3
+     assert results[0] == {
+@@ -521,8 +443,8 @@ def test_parse_futures_champion_extracts_team_and_odds():
+ 
+ def test_parse_futures_champion_empty_when_no_button_elements():
+     """Return empty list when no champion market buttons exist."""
+-    driver = FakeSeleniumDriver([])
+-    results = LiveOddsScraper()._parse_draftkings_futures_champion(driver)
++    driver = FakeDriver([])
++    results = DraftKingsScraper().parse_futures_champion(driver)
+     assert results == []
+ 
+ 
+@@ -538,8 +460,8 @@ def test_parse_futures_category_passes_bet_type():
+         attrs={'class': 'cb-market__template--2-columns'},
+         children=[btn],
+     )
+-    driver = FakeSeleniumDriver([template])
+-    results = LiveOddsScraper()._parse_draftkings_futures_category(driver, 'playoffs')
++    driver = FakeDriver([template])
++    results = DraftKingsScraper().parse_futures_category(driver, 'playoffs')
+ 
+     assert len(results) == 1
+     assert results[0]['bet_type'] == 'playoffs'

@@ -5,6 +5,21 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime
+from typing import TypedDict
+
+
+class GameOdds(TypedDict):
+    """Canonical schema for a single game's odds from any source."""
+
+    date: str
+    home_team: str
+    away_team: str
+    matchup: str
+    spread: str
+    moneyline: str
+    home_moneyline: str
+    over_under: str
+    source: str
 
 logger = logging.getLogger(__name__)
 

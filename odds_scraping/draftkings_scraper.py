@@ -192,7 +192,8 @@ import re
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from .parsers import first_american_odds, first_signed_number, first_total
+from .config import DK_BASE_URL, DK_FUTURES_CHAMPION_URL
+from .parsers import GameOdds, first_american_odds, first_signed_number, first_total
 
 if TYPE_CHECKING:
     from parsel import Selector as HtmlSelector
@@ -229,7 +230,32 @@ logger = logging.getLogger(__name__)
 class DraftKingsScraper:
     """Scrape and parse DraftKings NBA odds."""
 
-    def scrape_odds(self) -> list[dict]:
+    @staticmethod
+    def _create_driver():
+        """Create a headless Chrome driver with anti-detection settings."""
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+
+        chrome_options = Options()
+        chrome_options.add_argument('--headless=new')
+        chrome_options.add_argument('--window-size=1920,1080')
+        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_argument(
+            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) '
+            'Chrome/124.0.0.0 Safari/537.36'
+        )
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+
+        driver = webdriver.Chrome(options=chrome_options)
+        driver.execute_cdp_cmd(
+            'Page.addScriptToEvaluateOnNewDocument',
+            {'source': 'Object.defineProperty(navigator, "webdriver", {get: () => undefined})'},
+        )
+        return driver
+
+    def scrape_odds(self) -> list[GameOdds]:
         """
         Scrape live odds from DraftKings using Selenium.
 
@@ -241,9 +267,7 @@ class DraftKingsScraper:
             print('[WARN] Selenium not available. Install with: pip install selenium')
             return []
 
-        from selenium import webdriver
         from selenium.common.exceptions import TimeoutException
-        from selenium.webdriver.chrome.options import Options
         from selenium.webdriver.support import expected_conditions as EC  # noqa: N812
         from selenium.webdriver.support.ui import WebDriverWait
 
@@ -251,26 +275,9 @@ class DraftKingsScraper:
 
         driver = None
         try:
-            chrome_options = Options()
-            chrome_options.add_argument('--headless=new')
-            chrome_options.add_argument('--window-size=1920,1080')
-            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-            chrome_options.add_argument(
-                '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                'AppleWebKit/537.36 (KHTML, like Gecko) '
-                'Chrome/124.0.0.0 Safari/537.36'
-            )
-            chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
-            chrome_options.add_experimental_option('useAutomationExtension', False)
+            driver = self._create_driver()
 
-            # Selenium Manager (built into Selenium 4.6+) handles ChromeDriver automatically
-            driver = webdriver.Chrome(options=chrome_options)
-            driver.execute_cdp_cmd(
-                'Page.addScriptToEvaluateOnNewDocument',
-                {'source': 'Object.defineProperty(navigator, "webdriver", {get: () => undefined})'},
-            )
-
-            driver.get('https://sportsbook.draftkings.com/leagues/basketball/nba')
+            driver.get(DK_BASE_URL)
 
             print('Waiting for DraftKings to load (20 seconds)...')
 
@@ -318,9 +325,7 @@ class DraftKingsScraper:
             print('[WARN] Selenium not available. Install with: pip install selenium')
             return []
 
-        from selenium import webdriver
         from selenium.common.exceptions import TimeoutException
-        from selenium.webdriver.chrome.options import Options
         from selenium.webdriver.support import expected_conditions as EC  # noqa: N812
         from selenium.webdriver.support.ui import WebDriverWait
 
@@ -328,18 +333,8 @@ class DraftKingsScraper:
 
         driver = None
         try:
-            chrome_options = Options()
-            chrome_options.add_argument('--headless=new')
-            chrome_options.add_argument('--window-size=1920,1080')
-            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-            chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
-            chrome_options.add_experimental_option('useAutomationExtension', False)
-
-            driver = webdriver.Chrome(options=chrome_options)
-            driver.get(
-                'https://sportsbook.draftkings.com/leagues/basketball/nba'
-                '?category=futures&subcategory=champion'
-            )
+            driver = self._create_driver()
+            driver.get(DK_FUTURES_CHAMPION_URL)
 
             print('Waiting for DraftKings to load (15 seconds)...')
 
@@ -372,7 +367,7 @@ class DraftKingsScraper:
             if driver:
                 driver.quit()
 
-    def parse_games(self, driver) -> list[dict]:
+    def parse_games(self, driver) -> list[GameOdds]:
         """Parse games from DraftKings page using Selenium.
 
         When parsel is available, HTML is extracted once from the driver and
@@ -394,7 +389,7 @@ class DraftKingsScraper:
         return self.parse_event_cells(driver)
 
     @staticmethod
-    def parse_html(html: str) -> list[dict]:
+    def parse_html(html: str) -> list[GameOdds]:
         """Parse DraftKings NBA page HTML using parsel CSS selectors.
 
         Accepts raw HTML string (e.g. from ``driver.page_source``) and returns
@@ -451,7 +446,7 @@ class DraftKingsScraper:
 
         return games
 
-    def parse_cb_market(self, driver) -> list[dict]:
+    def parse_cb_market(self, driver) -> list[GameOdds]:
         """Parse DraftKings games using cb-market__template structure."""
         games = []
 
@@ -486,12 +481,7 @@ class DraftKingsScraper:
                         By.CSS_SELECTOR, "button[data-testid*='component-builder-market-button']"
                     )
 
-                    spread = 'N/A'
-                    moneyline = 'N/A'
-                    ou = 'N/A'
-
                     away_spread = 'N/A'
-                    home_spread = 'N/A'
                     away_ml = 'N/A'
                     home_ml = 'N/A'
                     over_total = 'N/A'
@@ -515,17 +505,12 @@ class DraftKingsScraper:
                             title = title_elem.text.strip() if title_elem else ''
 
                             if '0HC' in testid:
-                                # Spread — first is away, second is home
                                 if away_spread == 'N/A':
                                     away_spread = points
-                                elif home_spread == 'N/A':
-                                    home_spread = points
                             elif '0OU' in testid:
-                                # Total — extract the number
                                 if over_total == 'N/A' and title.upper() == 'O':
                                     over_total = points
                             elif '0ML' in testid:
-                                # Moneyline — first is away, second is home
                                 if away_ml == 'N/A':
                                     away_ml = odds
                                 elif home_ml == 'N/A':
@@ -534,21 +519,16 @@ class DraftKingsScraper:
                         except (AttributeError, ValueError):
                             continue
 
-                    # Use away team perspective for consistency
-                    spread = away_spread if away_spread != 'N/A' else 'N/A'
-                    moneyline = away_ml if away_ml != 'N/A' else 'N/A'
-                    ou = over_total if over_total != 'N/A' else 'N/A'
-
                     games.append(
                         {
                             'date': datetime.now().strftime('%Y-%m-%d'),
                             'home_team': home_team,
                             'away_team': away_team,
                             'matchup': f'{away_team} @ {home_team}',
-                            'spread': spread,
-                            'moneyline': moneyline,
+                            'spread': away_spread,
+                            'moneyline': away_ml,
                             'home_moneyline': home_ml,
-                            'over_under': ou,
+                            'over_under': over_total,
                             'source': 'DraftKings',
                         }
                     )
@@ -563,7 +543,7 @@ class DraftKingsScraper:
             logger.warning('Error parsing DraftKings cb-market structure: %s', e)
             return []
 
-    def parse_event_cells(self, driver) -> list[dict]:
+    def parse_event_cells(self, driver) -> list[GameOdds]:
         """Parse DraftKings games using legacy event-cell structure."""
         games = []
 
@@ -622,6 +602,7 @@ class DraftKingsScraper:
                             'matchup': f'{away_team} @ {home_team}',
                             'spread': spread,
                             'moneyline': moneyline,
+                            'home_moneyline': 'N/A',
                             'over_under': ou,
                             'source': 'DraftKings',
                         }

@@ -12,95 +12,38 @@ logger = logging.getLogger(__name__)
 class LiveOddsScraper:
     """Scrape live odds from ESPN and DraftKings for real games."""
 
-    def __init__(self):
-        self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-            'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-        }
-        self._http = HttpClient()
+    def __init__(self, http: HttpClient | None = None):
+        self._http = http or HttpClient()
+        self._espn = EspnOddsScraper(self._http)
+        self._dk = DraftKingsScraper()
         self.all_games = []
-
-    def _espn_scraper(self) -> EspnOddsScraper:
-        return EspnOddsScraper(self._http)
-
-    def _draftkings_scraper(self) -> DraftKingsScraper:
-        return DraftKingsScraper()
 
     # ============ ESPN SCRAPING (JSON API) ============
 
     def scrape_espn_nba_odds(self):
         """Scrape live NBA odds from ESPN's JSON API."""
-        games = self._espn_scraper().scrape_nba_odds()
+        games = self._espn.scrape_nba_odds()
         self.all_games.extend(games)
         return games
-
-    def _parse_espn_events(self, events: list) -> list:
-        """Parse game data from ESPN JSON API events list."""
-        return self._espn_scraper().parse_header_events(events)
-
-    def _scrape_espn_scoreboard_fallback(self) -> list:
-        """Fetch equivalent normalized odds from ESPN's scoreboard API shape."""
-        games = self._espn_scraper().scrape_scoreboard_fallback()
-        self.all_games.extend(games)
-        return games
-
-    def _parse_espn_scoreboard_events(self, events: list) -> list:
-        return self._espn_scraper().parse_scoreboard_events(events)
-
-    def _select_scoreboard_odds(self, odds_list: list) -> dict | None:
-        return self._espn_scraper().select_scoreboard_odds(odds_list)
 
     # ============ DRAFTKINGS SCRAPING (Selenium) ============
 
     def scrape_draftkings_odds(self):
         """Scrape live odds from DraftKings using Selenium."""
-        games = self._draftkings_scraper().scrape_odds()
+        games = self._dk.scrape_odds()
         if games:
             self.all_games.extend(games)
         return games
 
     @staticmethod
-    def parse_draftkings_html(html: str) -> list:
-        """Parse DraftKings NBA page HTML using parsel CSS selectors."""
+    def parse_draftkings_html(html: str) -> list[dict]:
+        """Compatibility wrapper for offline HTML parsing.
+
+        Delegates to DraftKingsScraper.parse_html for consumers that still
+        call LiveOddsScraper.parse_draftkings_html(...).
+        """
         return DraftKingsScraper.parse_html(html)
 
-    def _parse_draftkings_games(self, driver) -> list:
-        """Parse games from DraftKings page using Selenium."""
-        return self._draftkings_scraper().parse_games(driver)
-
-    def _parse_draftkings_cb_market(self, driver) -> list:
-        """Parse DraftKings games using cb-market__template structure."""
-        return self._draftkings_scraper().parse_cb_market(driver)
-
-    def _parse_draftkings_event_cells(self, driver) -> list:
-        """Parse DraftKings games using legacy event-cell structure."""
-        return self._draftkings_scraper().parse_event_cells(driver)
-
-    def _parse_draftkings_markets(self, outcome_cells, team_name: str) -> tuple[str, str, str]:
-        return self._draftkings_scraper().parse_markets(outcome_cells, team_name)
-
-    # ============ DRAFTKINGS FUTURES PARSING ============
-
-    def _parse_draftkings_futures_category(self, driver, bet_type: str) -> list:
-        return self._draftkings_scraper().parse_futures_category(driver, bet_type)
-
-    def _parse_draftkings_futures_champion(self, driver) -> list:
-        return self._parse_draftkings_futures_category(driver, 'champion')
-
-    def _parse_draftkings_futures_playoffs(self, driver) -> list:
-        return self._parse_draftkings_futures_category(driver, 'playoffs')
-
-    def _parse_draftkings_futures_conference(self, driver) -> list:
-        return self._parse_draftkings_futures_category(driver, 'conference')
-
-    def _parse_draftkings_futures_series_props(self, driver) -> list:
-        return self._parse_draftkings_futures_category(driver, 'series_props')
-
-    def _parse_draftkings_futures_series_player_props(self, driver) -> list:
-        return self._parse_draftkings_futures_category(driver, 'series_player_props')
-
-    def _parse_draftkings_futures_seed_to_win(self, driver) -> list:
-        return self._parse_draftkings_futures_category(driver, 'seed_to_win')
     # ============ EXPORT & DISPLAY ============
 
     def export_to_csv(self, games, filename='data/live_odds.csv'):

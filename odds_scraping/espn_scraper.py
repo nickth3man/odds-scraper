@@ -13,23 +13,11 @@ from datetime import datetime
 
 import httpx
 
+from .config import ESPN_API_PARAMS, ESPN_API_URL, ESPN_SCOREBOARD_API_URL
 from .http_client import HttpClient
-from .parsers import format_american_odds, format_event_date, format_line
+from .parsers import GameOdds, format_american_odds, format_event_date, format_line
 
 logger = logging.getLogger(__name__)
-
-_ESPN_API_URL = 'https://site.web.api.espn.com/apis/v2/scoreboard/header'
-_ESPN_SCOREBOARD_API_URL = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard'
-_ESPN_API_PARAMS = {
-    'sport': 'basketball',
-    'league': 'nba',
-    'region': 'us',
-    'lang': 'en',
-    'contentorigin': 'espn',
-    'buyWindow': '1m',
-    'showAirings': 'buy,live,replay',
-    'tz': 'America/New_York',
-}
 
 
 class EspnOddsScraper:
@@ -38,14 +26,14 @@ class EspnOddsScraper:
     def __init__(self, http: HttpClient | None = None):
         self._http = http or HttpClient()
 
-    def scrape_nba_odds(self) -> list[dict]:
+    def scrape_nba_odds(self) -> list[GameOdds]:
         """Fetch live NBA odds from ESPN's header API with scoreboard fallback."""
         print('[Fetching] Live NBA odds from ESPN API...\n')
 
         try:
             response = self._http.get(
-                _ESPN_API_URL,
-                params=_ESPN_API_PARAMS,
+                ESPN_API_URL,
+                params=ESPN_API_PARAMS,
             )
             data = response.json()
 
@@ -65,7 +53,7 @@ class EspnOddsScraper:
             print(f'[WARN] ESPN header API failed: {e}')
             return self.scrape_scoreboard_fallback()
 
-    def parse_header_events(self, events: list) -> list[dict]:
+    def parse_header_events(self, events: list) -> list[GameOdds]:
         """Parse ESPN header API event objects into the live odds schema."""
         games = []
 
@@ -120,11 +108,11 @@ class EspnOddsScraper:
 
         return games
 
-    def scrape_scoreboard_fallback(self) -> list[dict]:
+    def scrape_scoreboard_fallback(self) -> list[GameOdds]:
         """Fetch equivalent normalized odds from ESPN's scoreboard API shape."""
         try:
             response = self._http.get(
-                _ESPN_SCOREBOARD_API_URL,
+                ESPN_SCOREBOARD_API_URL,
                 params={'dates': datetime.now().strftime('%Y%m%d'), 'limit': 100},
             )
             games = self.parse_scoreboard_events(response.json().get('events', []))
@@ -139,7 +127,7 @@ class EspnOddsScraper:
         print('[WARN] ESPN fallback: No upcoming games found\n')
         return []
 
-    def parse_scoreboard_events(self, events: list) -> list[dict]:
+    def parse_scoreboard_events(self, events: list) -> list[GameOdds]:
         games = []
 
         for event in events:
