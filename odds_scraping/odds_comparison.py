@@ -49,12 +49,13 @@ class OddsComparison:
                     best_book = book
                     best_value = odds
                 else:
-                    # For negative odds (favorites), higher (less negative) is better
-                    # For positive odds (underdogs), higher is better
+                    # For moneyline: higher American odds = better payout
+                    # For spread: higher number = more favorable (e.g., -7.0 > -7.5)
+                    # For total: higher number = better for 'over', worse for 'under'
+                    # This picks the book offering the highest numerical odds value
                     if odds > best_value:
                         best_book = book
                         best_value = odds
-
             result = {
                 'date': game_data['date'],
                 'team': game_data['team'],

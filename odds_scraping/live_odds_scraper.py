@@ -162,10 +162,11 @@ import logging
 import re
 from datetime import datetime
 
-import pandas as pd
-from odds_scraping.http_client import HttpClient
 import httpx
+import pandas as pd
 import requests
+
+from odds_scraping.http_client import HttpClient
 
 try:
     from selenium import webdriver
@@ -250,6 +251,7 @@ class LiveOddsScraper:
             'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
         }
         self._http = HttpClient()
+        self.all_games = []
 
     # ============ ESPN SCRAPING (JSON API) ============
 

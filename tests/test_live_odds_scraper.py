@@ -2,7 +2,6 @@ import json
 import re
 from pathlib import Path
 
-from odds_scraping import live_odds_scraper
 from odds_scraping.live_odds_scraper import LiveOddsScraper
 
 
@@ -145,10 +144,11 @@ def test_scrape_espn_uses_scoreboard_fallback_when_header_api_returns_non_json(m
                 ]
             }
 
+    scraper = LiveOddsScraper()
     responses = iter([HeaderResponse(), ScoreboardResponse()])
-    monkeypatch.setattr(live_odds_scraper.requests, 'get', lambda *_args, **_kwargs: next(responses))
+    monkeypatch.setattr(scraper._http, 'get', lambda *_args, **_kwargs: next(responses))
 
-    [game] = LiveOddsScraper().scrape_espn_nba_odds()
+    [game] = scraper.scrape_espn_nba_odds()
 
     assert game['matchup'] == 'OKC Thunder @ Boston Celtics'
     assert game['spread'] == '-2.5'
@@ -218,7 +218,7 @@ def test_parse_espn_scoreboard_api_fixture():
 
 
 def test_draftkings_fixture_no_odds_table_fails_gracefully():
-    fixture_path = Path(__file__).parent.parent / 'fixtures' / 'draftkings_nba.html'
+    fixture_path = Path(__file__).parent.parent / 'fixtures' / 'dk-game-lines.html'
     with open(fixture_path, encoding='utf-8') as f:
         html = f.read()
 
