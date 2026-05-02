@@ -135,9 +135,8 @@ class HttpClient:
     def _resolve_domain(self, url: str) -> str:
         """Extract a rate-limiting key from *url* (e.g. 'espn.com')."""
         hostinfo = get_hostinfo(url)
-        if hostinfo is not None:
-            domain: str = hostinfo[0]  # type narrowed after None guard
-            return domain
+        if hostinfo is not None and hostinfo[0] is not None:
+            return hostinfo[0]
         return urlparse(url).netloc
 
     def _wait_for_domain(self, domain: str) -> None:
