@@ -166,7 +166,6 @@ OddsComparison
 ## 📈 Future Enhancements
 
 - [ ] Add more sportsbooks (BetMGM, PointsBet)
-- [ ] Multi-sport support (NFL, MLB, NHL)
 - [ ] Backtesting framework
 - [ ] Web dashboard
 - [ ] Machine learning win probability model

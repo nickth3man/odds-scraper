@@ -79,6 +79,28 @@ class LiveOddsScraper:
     def _parse_draftkings_markets(self, outcome_cells, team_name: str) -> tuple[str, str, str]:
         return self._draftkings_scraper().parse_markets(outcome_cells, team_name)
 
+    # ============ DRAFTKINGS FUTURES PARSING ============
+
+    def _parse_draftkings_futures_category(self, driver, bet_type: str) -> list:
+        return self._draftkings_scraper().parse_futures_category(driver, bet_type)
+
+    def _parse_draftkings_futures_champion(self, driver) -> list:
+        return self._parse_draftkings_futures_category(driver, 'champion')
+
+    def _parse_draftkings_futures_playoffs(self, driver) -> list:
+        return self._parse_draftkings_futures_category(driver, 'playoffs')
+
+    def _parse_draftkings_futures_conference(self, driver) -> list:
+        return self._parse_draftkings_futures_category(driver, 'conference')
+
+    def _parse_draftkings_futures_series_props(self, driver) -> list:
+        return self._parse_draftkings_futures_category(driver, 'series_props')
+
+    def _parse_draftkings_futures_series_player_props(self, driver) -> list:
+        return self._parse_draftkings_futures_category(driver, 'series_player_props')
+
+    def _parse_draftkings_futures_seed_to_win(self, driver) -> list:
+        return self._parse_draftkings_futures_category(driver, 'seed_to_win')
     # ============ EXPORT & DISPLAY ============
 
     def export_to_csv(self, games, filename='data/live_odds.csv'):

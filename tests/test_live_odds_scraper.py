@@ -469,3 +469,80 @@ def test_parse_draftkings_cb_market_multiple_games():
     assert len(games) == 2
     assert games[0]['matchup'] == 'PHI 76ers @ BOS Celtics'
     assert games[1]['matchup'] == 'ORL Magic @ DET Pistons'
+
+
+# ============ futures champion tests ============
+
+
+def test_parse_futures_champion_extracts_team_and_odds():
+    """Parse DraftKings futures champion market structure."""
+    # Each button has: button-title-market-board (team) + button-odds-market-board (odds)
+    team1 = FakeWebElement(text='OKC Thunder', attrs={'data-testid': 'button-title-market-board'})
+    odds1 = FakeWebElement(text='-130', attrs={'data-testid': 'button-odds-market-board'})
+    btn1 = FakeWebElement(
+        attrs={'class': 'cb-market__button cb-market__button--regular'},
+        children=[team1, odds1],
+    )
+
+    team2 = FakeWebElement(text='BOS Celtics', attrs={'data-testid': 'button-title-market-board'})
+    odds2 = FakeWebElement(text='+650', attrs={'data-testid': 'button-odds-market-board'})
+    btn2 = FakeWebElement(
+        attrs={'class': 'cb-market__button cb-market__button--regular'},
+        children=[team2, odds2],
+    )
+
+    team3 = FakeWebElement(text='NY Knicks', attrs={'data-testid': 'button-title-market-board'})
+    odds3 = FakeWebElement(text='  +1800  ', attrs={'data-testid': 'button-odds-market-board'})
+    btn3 = FakeWebElement(
+        attrs={'class': 'cb-market__button cb-market__button--regular'},
+        children=[team3, odds3],
+    )
+
+    template = FakeWebElement(
+        attrs={'class': 'cb-market__template--2-columns'},
+        children=[btn1, btn2, btn3],
+    )
+
+    driver = FakeSeleniumDriver([template])
+    results = LiveOddsScraper()._parse_draftkings_futures_champion(driver)
+
+    assert len(results) == 3
+    assert results[0] == {
+        'team': 'OKC Thunder',
+        'odds': '-130',
+        'bet_type': 'champion',
+        'source': 'DraftKings',
+    }
+    assert results[1]['team'] == 'BOS Celtics'
+    assert results[1]['odds'] == '+650'
+    assert results[2]['team'] == 'NY Knicks'
+    assert results[2]['odds'] == '+1800'
+
+
+def test_parse_futures_champion_empty_when_no_button_elements():
+    """Return empty list when no champion market buttons exist."""
+    driver = FakeSeleniumDriver([])
+    results = LiveOddsScraper()._parse_draftkings_futures_champion(driver)
+    assert results == []
+
+
+def test_parse_futures_category_passes_bet_type():
+    """Verify bet_type parameter is set in each output dict."""
+    team = FakeWebElement(text='LAL Lakers', attrs={'data-testid': 'button-title-market-board'})
+    odds = FakeWebElement(text='+1200', attrs={'data-testid': 'button-odds-market-board'})
+    btn = FakeWebElement(
+        attrs={'class': 'cb-market__button cb-market__button--regular'},
+        children=[team, odds],
+    )
+    template = FakeWebElement(
+        attrs={'class': 'cb-market__template--2-columns'},
+        children=[btn],
+    )
+    driver = FakeSeleniumDriver([template])
+    results = LiveOddsScraper()._parse_draftkings_futures_category(driver, 'playoffs')
+
+    assert len(results) == 1
+    assert results[0]['bet_type'] == 'playoffs'
+    assert results[0]['team'] == 'LAL Lakers'
+    assert results[0]['odds'] == '+1200'
+    assert results[0]['source'] == 'DraftKings'

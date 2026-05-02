@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # =============================================================================
 # DRAFTKINGS NBA BETTING CATEGORIES — TO BE SCRAPED
 # =============================================================================
@@ -23,7 +25,7 @@
 #        Moneyline col: button[data-testid*='0ML'] > [data-testid='button-odds-market-board']
 #      Current status: _parse_draftkings_cb_market() handles this
 #
-#  1b. PLAYER PROPS (subcategory=player-props) [TODO]
+#  1b. PLAYER PROPS (subcategory=player-props) [PENDING_IMPLEMENTATION]
 #      URL: ?category=games&subcategory=player-props&nav_1={prop_type}
 #      Second-level nav (nav_1):
 #        • POINTS           — Over/Under points scored per player
@@ -43,7 +45,7 @@
 #            - Extract player name, stat type, threshold, odds
 #            - Handle scrollable threshold strip (horizontal scroll buttons)
 #
-#  1c. ALT LINES (subcategory=alt-lines) [TODO]
+#  1c. ALT LINES (subcategory=alt-lines) [PENDING_IMPLEMENTATION]
 #      URL: ?category=games&subcategory=alt-lines&nav_1={alt_type}
 #      Second-level nav (nav_1):
 #        • ALTERNATE SPREAD  — Slider from ±0.5 to ±30.5 with odds per increment
@@ -61,9 +63,9 @@
 #            - Parse the scrollable slider values
 #            - Map each spread/total increment to away/home odds
 #
-#  1d. QUICK HITS (subcategory=quick-hits) [TODO]
+#  1d. QUICK HITS (subcategory=quick-hits) [PENDING_IMPLEMENTATION]
 #      URL: ?category=games&subcategory=quick-hits
-#  1d. QUICK HITS (subcategory=quick-hits) [TODO]
+#  1d. QUICK HITS (subcategory=quick-hits) [PENDING_IMPLEMENTATION]
 #      URL: ?category=games&subcategory=quick-hits&nav_1={hit_type}
 #      "First occurrence" props — who/what happens FIRST in the game.
 #      Data structure per game:
@@ -96,40 +98,38 @@
 #            - Parse game sections (same as other tabs)
 #            - Extract player name, image URL, odds for each event type
 #      Quick single-click bets like "Team to win by 1-10 points"
-#      TODO: Investigate and implement
-#      URL: ?category=games&subcategory=quick-hits
-#      Quick single-click bets like "Team to win by 1-10 points"
-#      TODO: Investigate and implement
+#      Fixture (dk-quick-hits-*.html): cb-market__template per game,
+#      player rows with name + image + moneyline odds button per event.
 #
 # =============================================================================
 # 2. FUTURES TAB (category=futures)
 # =============================================================================
 #
-#  2a. CHAMPION (subcategory=champion) [TODO]
+#  2a. CHAMPION (subcategory=champion) [PENDING_IMPLEMENTATION]
 #      URL: ?category=futures&subcategory=champion
 #      "Finals Winner" section with team buttons: "OKC Thunder -130", "BOS Celtics +650"
 #      Each button = American odds for that team to win championship
 #      TODO: Implement _parse_draftkings_futures_champion(driver)
 #
-#  2b. PLAYOFFS (subcategory=playoffs) [TODO]
+#  2b. PLAYOFFS (subcategory=playoffs) [PENDING_IMPLEMENTATION]
 #      URL: ?category=futures&subcategory=playoffs
-#      TODO: Investigate and implement
+#      Fixture (dk-futures-playoffs.html): team buttons with odds labels.
 #
-#  2c. CONFERENCE (subcategory=conference) [TODO]
+#  2c. CONFERENCE (subcategory=conference) [PENDING_IMPLEMENTATION]
 #      URL: ?category=futures&subcategory=conference
-#      TODO: Investigate and implement
+#      Fixture (dk-futures-conference.html): team buttons grouped by East/West.
 #
-#  2d. SERIES PROPS (subcategory=series-props) [TODO]
+#  2d. SERIES PROPS (subcategory=series-props) [PENDING_IMPLEMENTATION]
 #      URL: ?category=futures&subcategory=series-props
-#      TODO: Investigate and implement
+#      Fixture (dk-futures-series-props.html): series outcome buttons with odds.
 #
-#  2e. SERIES PLAYER PROPS (subcategory=series-player-props) [TODO]
+#  2e. SERIES PLAYER PROPS (subcategory=series-player-props) [PENDING_IMPLEMENTATION]
 #      URL: ?category=futures&subcategory=series-player-props
-#      TODO: Investigate and implement
+#      Fixture (dk-futures-series-player-props.html): player stat leader odds.
 #
-#  2f. SEED TO WIN (subcategory=seed-to-win) [TODO]
+#  2f. SEED TO WIN (subcategory=seed-to-win) [PENDING_IMPLEMENTATION]
 #      URL: ?category=futures&subcategory=seed-to-win
-#      TODO: Investigate and implement
+#      Fixture (dk-futures-seed-to-win.html): seed-number buttons (1-8) + odds.
 #
 # =============================================================================
 # 3. QUICK SGP TAB — Same Game Parlay
@@ -137,7 +137,8 @@
 #
 #  URL: ?category=games&subcategory=game-lines (then SGP toggle)
 #  Each game has a Quick SGP link: /event/{slug}/{id}?sgpmode=true
-#  TODO: Implement _parse_draftkings_sgp(driver)
+#  [PENDING_IMPLEMENTATION] No fixture exists; requires live DK with sgpmode=true.
+#      TODO: Implement _parse_draftkings_sgp(driver)
 #
 # =============================================================================
 # 4. PER-GAME DATA TO EXTRACT (across all categories)
@@ -156,7 +157,36 @@
 #    • sgp_link (same-game parlay quick link)
 #
 # ==============================================================================
-
+#
+# =============================================================================
+# FIXTURE AVAILABILITY SUMMARY
+# =============================================================================
+#
+#   fixtures/ directory contains HTML snapshots for offline parser development:
+#
+#   Games tab:
+#     1a. Game Lines         ✓ dk-game-lines.html
+#     1b. Player Props       ✓ dk-player-props-*.html (points, threes, rebounds,
+#                               assists, pts-reb-ast, double-double, triple-double)
+#     1c. Alt Lines          ✓ dk-alt-lines-*.html (spread, total, ml-3way,
+#                               halftime, quarter)
+#     1d. Quick Hits         ✓ dk-quick-hits-*.html (1st-point, 1st-scorer-exact,
+#                               1st-three; remaining hit_types share same structure)
+#
+#   Futures tab:
+#     2a. Champion           ✓ dk-futures-champion.html
+#     2b. Playoffs           ✓ dk-futures-playoffs.html
+#     2c. Conference         ✓ dk-futures-conference.html
+#     2d. Series Props       ✓ dk-futures-series-props.html
+#     2e. Series Player Props ✓ dk-futures-series-player-props.html
+#     2f. Seed To Win        ✓ dk-futures-seed-to-win.html
+#
+#   Quick SGP tab:
+#     3.  Same Game Parlay   ✗ No fixture — requires live DK with sgpmode=true
+#
+#   All fixtures embed window.__INITIAL_STATE__ JSON containing eventGroups,
+#   outcomes, and sports data. Parsers should extract this JSON block first.
+# ==============================================================================
 import logging
 import re
 from datetime import datetime
@@ -258,6 +288,69 @@ class DraftKingsScraper:
 
         except Exception as e:
             logger.error('DraftKings scrape failed: %s', e)
+            return []
+
+        finally:
+            if driver:
+                driver.quit()
+
+    def scrape_futures_champion(self) -> list[dict]:
+        """Scrape DraftKings futures champion odds using Selenium.
+
+        Navigates to ?category=futures&subcategory=champion and parses
+        team names with American championship odds.
+        """
+        if not SELENIUM_AVAILABLE:
+            print('[WARN] Selenium not available. Install with: pip install selenium')
+            return []
+
+        from selenium import webdriver
+        from selenium.common.exceptions import TimeoutException
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.support import expected_conditions as EC  # noqa: N812
+        from selenium.webdriver.support.ui import WebDriverWait
+
+        print('[Fetching] DraftKings futures champion odds...')
+
+        driver = None
+        try:
+            chrome_options = Options()
+            chrome_options.add_argument('--start-maximized')
+            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+            chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
+            chrome_options.add_experimental_option('useAutomationExtension', False)
+
+            driver = webdriver.Chrome(options=chrome_options)
+            driver.get(
+                'https://sportsbook.draftkings.com/leagues/basketball/nba'
+                '?category=futures&subcategory=champion'
+            )
+
+            print('Waiting for DraftKings to load (15 seconds)...')
+
+            try:
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located(
+                        (By.CSS_SELECTOR, "[class*='cb-market__button']")
+                    )
+                )
+                print('[OK] Champion page loaded!')
+            except TimeoutException:
+                print('[WARN] Champion page took too long to load')
+                driver.quit()
+                return []
+
+            results = self.parse_futures_champion(driver)
+
+            if results:
+                print(f'[OK] DraftKings Champion: Found {len(results)} teams')
+            else:
+                print('[WARN] DraftKings Champion: No teams found')
+
+            return results
+
+        except Exception as e:
+            logger.error('DraftKings futures champion scrape failed: %s', e)
             return []
 
         finally:
@@ -563,3 +656,74 @@ class DraftKingsScraper:
                     ou = value
 
         return spread, moneyline, ou
+
+
+    def parse_futures_category(self, driver, bet_type: str) -> list[dict]:
+        """Parse a DraftKings futures betting category.
+
+        HTML structure: sportsbook-accordion__wrapper sections contain
+        content-sports-hierarchy-teams__team rows, each with a team name
+        <a> tag and an American-odds button.
+        """
+        results: list[dict] = []
+
+        try:
+            wrappers = driver.find_elements(
+                By.CSS_SELECTOR, "[class*='sportsbook-accordion__wrapper']"
+            )
+
+            for wrapper in wrappers:
+                teams = wrapper.find_elements(
+                    By.CSS_SELECTOR, "[class*='content-sports-hierarchy-teams__team']"
+                )
+
+                for team in teams:
+                    try:
+                        # Team name is in an <a> tag
+                        name_elem = team.find_element(By.CSS_SELECTOR, 'a')
+                        team_name = name_elem.text.strip()
+
+                        if not team_name:
+                            continue
+
+                        # American odds in button text within the team row
+                        odds = 'N/A'
+                        buttons = team.find_elements(By.CSS_SELECTOR, 'button')
+                        for btn in buttons:
+                            found = first_american_odds(btn.text.strip())
+                            if found:
+                                odds = found
+                                break
+
+                        results.append({
+                            'team': team_name,
+                            'odds': odds,
+                            'bet_type': bet_type,
+                            'source': 'DraftKings',
+                        })
+                    except Exception as e:
+                        logger.warning('Failed to parse futures team row: %s', e)
+                        continue
+
+        except Exception as e:
+            logger.warning('Failed to parse DraftKings futures %s: %s', bet_type, e)
+
+        return results
+
+    def parse_futures_champion(self, driver) -> list[dict]:
+        return self.parse_futures_category(driver, 'champion')
+
+    def parse_futures_playoffs(self, driver) -> list[dict]:
+        return self.parse_futures_category(driver, 'playoffs')
+
+    def parse_futures_conference(self, driver) -> list[dict]:
+        return self.parse_futures_category(driver, 'conference')
+
+    def parse_futures_series_props(self, driver) -> list[dict]:
+        return self.parse_futures_category(driver, 'series_props')
+
+    def parse_futures_series_player_props(self, driver) -> list[dict]:
+        return self.parse_futures_category(driver, 'series_player_props')
+
+    def parse_futures_seed_to_win(self, driver) -> list[dict]:
+        return self.parse_futures_category(driver, 'seed_to_win')
