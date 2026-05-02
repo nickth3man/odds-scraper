@@ -21,6 +21,7 @@ dependencies = [
     "curl-cffi>=0.15.0",
     "orjson>=3.11.8",
     "parsel>=1.11.0",
+    "nicegui>=2.0",
 ]
 
 [dependency-groups]

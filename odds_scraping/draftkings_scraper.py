@@ -252,32 +252,46 @@ class DraftKingsScraper:
         driver = None
         try:
             chrome_options = Options()
-            chrome_options.add_argument('--start-maximized')
+            chrome_options.add_argument('--headless=new')
+            chrome_options.add_argument('--window-size=1920,1080')
             chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+            chrome_options.add_argument(
+                '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                'AppleWebKit/537.36 (KHTML, like Gecko) '
+                'Chrome/124.0.0.0 Safari/537.36'
+            )
             chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
             chrome_options.add_experimental_option('useAutomationExtension', False)
 
             # Selenium Manager (built into Selenium 4.6+) handles ChromeDriver automatically
             driver = webdriver.Chrome(options=chrome_options)
+            driver.execute_cdp_cmd(
+                'Page.addScriptToEvaluateOnNewDocument',
+                {'source': 'Object.defineProperty(navigator, "webdriver", {get: () => undefined})'},
+            )
 
             driver.get('https://sportsbook.draftkings.com/leagues/basketball/nba')
 
-            print('Waiting for DraftKings to load (15 seconds)...')
+            print('Waiting for DraftKings to load (20 seconds)...')
 
-            # Wait for the game table — DraftKings uses sportsbook-table or event-cell classes
+            # Wait for the game table — DraftKings uses cb-market or event-cell classes
             try:
-                WebDriverWait(driver, 15).until(
+                WebDriverWait(driver, 20).until(
                     EC.presence_of_element_located(
-                        (By.CSS_SELECTOR, "[class*='sportsbook-table'], [class*='event-cell']")
+                        (By.CSS_SELECTOR, "[class*='cb-market'], [class*='event-cell']")
                     )
                 )
                 print('[OK] Page loaded!\n')
             except TimeoutException:
-                print('[WARN] Page took too long to load\n')
+                print('[WARN] Page took too long to load — saving debug snapshot\n')
+                logger.warning('DraftKings timeout. Page title: %s', driver.title)
+                logger.warning('Page source preview: %.500s', driver.page_source)
                 driver.quit()
                 return []
 
+            logger.info('DraftKings page title: %s', driver.title)
             games = self.parse_games(driver)
+            logger.info('DraftKings parse_games returned %d games', len(games))
 
             if games:
                 print(f'[OK] DraftKings: Found {len(games)} games\n')
@@ -315,7 +329,8 @@ class DraftKingsScraper:
         driver = None
         try:
             chrome_options = Options()
-            chrome_options.add_argument('--start-maximized')
+            chrome_options.add_argument('--headless=new')
+            chrome_options.add_argument('--window-size=1920,1080')
             chrome_options.add_argument('--disable-blink-features=AutomationControlled')
             chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
             chrome_options.add_experimental_option('useAutomationExtension', False)
