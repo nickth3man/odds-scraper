@@ -35,6 +35,15 @@ class LiveOddsScraper:
             self.all_games.extend(games)
         return games
 
+    @staticmethod
+    def parse_draftkings_html(html: str) -> list[dict]:
+        """Compatibility wrapper for offline HTML parsing.
+
+        Delegates to DraftKingsScraper.parse_html for consumers that still
+        call LiveOddsScraper.parse_draftkings_html(...).
+        """
+        return DraftKingsScraper.parse_html(html)
+
     # ============ EXPORT & DISPLAY ============
 
     def export_to_csv(self, games, filename='data/live_odds.csv'):

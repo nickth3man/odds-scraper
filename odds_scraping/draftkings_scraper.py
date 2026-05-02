@@ -482,7 +482,6 @@ class DraftKingsScraper:
                     )
 
                     away_spread = 'N/A'
-                    home_spread = 'N/A'
                     away_ml = 'N/A'
                     home_ml = 'N/A'
                     over_total = 'N/A'
@@ -508,8 +507,6 @@ class DraftKingsScraper:
                             if '0HC' in testid:
                                 if away_spread == 'N/A':
                                     away_spread = points
-                                elif home_spread == 'N/A':
-                                    home_spread = points
                             elif '0OU' in testid:
                                 if over_total == 'N/A' and title.upper() == 'O':
                                     over_total = points
