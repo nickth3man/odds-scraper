@@ -13,23 +13,11 @@ from datetime import datetime
 
 import httpx
 
+from .config import ESPN_API_PARAMS, ESPN_API_URL, ESPN_SCOREBOARD_API_URL
 from .http_client import HttpClient
 from .parsers import GameOdds, format_american_odds, format_event_date, format_line
 
 logger = logging.getLogger(__name__)
-
-_ESPN_API_URL = 'https://site.web.api.espn.com/apis/v2/scoreboard/header'
-_ESPN_SCOREBOARD_API_URL = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard'
-_ESPN_API_PARAMS = {
-    'sport': 'basketball',
-    'league': 'nba',
-    'region': 'us',
-    'lang': 'en',
-    'contentorigin': 'espn',
-    'buyWindow': '1m',
-    'showAirings': 'buy,live,replay',
-    'tz': 'America/New_York',
-}
 
 
 class EspnOddsScraper:
@@ -44,8 +32,8 @@ class EspnOddsScraper:
 
         try:
             response = self._http.get(
-                _ESPN_API_URL,
-                params=_ESPN_API_PARAMS,
+                ESPN_API_URL,
+                params=ESPN_API_PARAMS,
             )
             data = response.json()
 
@@ -124,7 +112,7 @@ class EspnOddsScraper:
         """Fetch equivalent normalized odds from ESPN's scoreboard API shape."""
         try:
             response = self._http.get(
-                _ESPN_SCOREBOARD_API_URL,
+                ESPN_SCOREBOARD_API_URL,
                 params={'dates': datetime.now().strftime('%Y%m%d'), 'limit': 100},
             )
             games = self.parse_scoreboard_events(response.json().get('events', []))

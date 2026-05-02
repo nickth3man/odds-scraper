@@ -192,6 +192,7 @@ import re
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from .config import DK_BASE_URL, DK_FUTURES_CHAMPION_URL
 from .parsers import GameOdds, first_american_odds, first_signed_number, first_total
 
 if TYPE_CHECKING:
@@ -224,9 +225,6 @@ except ImportError:
 
 
 logger = logging.getLogger(__name__)
-
-_DK_BASE_URL = 'https://sportsbook.draftkings.com/leagues/basketball/nba'
-_DK_FUTURES_CHAMPION_URL = _DK_BASE_URL + '?category=futures&subcategory=champion'
 
 
 class DraftKingsScraper:
@@ -279,7 +277,7 @@ class DraftKingsScraper:
         try:
             driver = self._create_driver()
 
-            driver.get(_DK_BASE_URL)
+            driver.get(DK_BASE_URL)
 
             print('Waiting for DraftKings to load (20 seconds)...')
 
@@ -336,7 +334,7 @@ class DraftKingsScraper:
         driver = None
         try:
             driver = self._create_driver()
-            driver.get(_DK_FUTURES_CHAMPION_URL)
+            driver.get(DK_FUTURES_CHAMPION_URL)
 
             print('Waiting for DraftKings to load (15 seconds)...')
 
