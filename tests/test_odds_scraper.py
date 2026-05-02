@@ -5,7 +5,16 @@ from pathlib import Path
 
 from odds_scraping.odds_scraper import OddsScraper
 
-_REQUIRED_KEYS = {'game_id', 'date', 'team', 'opponent', 'moneyline', 'spread', 'over_under', 'sportsbook'}
+_REQUIRED_KEYS = {
+    'game_id',
+    'date',
+    'team',
+    'opponent',
+    'moneyline',
+    'spread',
+    'over_under',
+    'sportsbook',
+}
 
 
 class TestOddsScraper:

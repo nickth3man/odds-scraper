@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
+from importlib import import_module
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import httpx
 from courlan.urlutils import get_hostinfo
-from fake_useragent import UserAgent
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -26,17 +28,43 @@ try:
 except ImportError:  # pragma: no cover
     import json as _json  # type: ignore[no-redef]
 
+if TYPE_CHECKING:
+    from curl_cffi.requests import Response as CurlResponse
+    from curl_cffi.requests.impersonate import BrowserTypeLiteral
+else:
+    BrowserTypeLiteral = str
+
 try:
     from curl_cffi import requests as _curl_requests  # TLS impersonation
+    from curl_cffi.requests.exceptions import RequestException as _CurlRequestException
+
+    _curl_get: Callable[..., CurlResponse] | None = _curl_requests.get
+    _CURL_TRANSIENT_EXCEPTIONS = (_CurlRequestException,)
     _CURL_AVAILABLE = True
 except ImportError:  # pragma: no cover
-    _curl_requests = None  # type: ignore[assignment]
+    _curl_get = None
+    _CURL_TRANSIENT_EXCEPTIONS: tuple[type[Exception], ...] = ()
     _CURL_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
-# Shared UserAgent (caches browser list internally)
-_ua_generator = UserAgent()
+
+class _FallbackUserAgent:
+    @property
+    def random(self) -> str:
+        return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36'
+
+
+def _build_user_agent_provider():
+    try:
+        user_agent_module = import_module('fake_useragent')
+        user_agent_factory = user_agent_module.UserAgent
+    except (ImportError, AttributeError):  # pragma: no cover
+        return _FallbackUserAgent()
+    return user_agent_factory()
+
+
+_ua_generator = _build_user_agent_provider()
 
 # Exceptions we consider transient and worth retrying
 _TRANSIENT_EXCEPTIONS = (
@@ -78,8 +106,6 @@ class HttpClient:
             timeout=httpx.Timeout(self._default_timeout),
             headers=self._build_headers(),
         )
-
-
 
     # ------------------------------------------------------------------
     # Public API
@@ -126,7 +152,7 @@ class HttpClient:
         *,
         params: dict | None = None,
         headers: dict[str, str] | None = None,
-        impersonate: str | None = None,
+        impersonate: BrowserTypeLiteral | None = None,
     ) -> object:
         """GET *url* and return parsed JSON using orjson (fast) or stdlib json.
 
@@ -135,18 +161,33 @@ class HttpClient:
         genuine browser TLS fingerprint, bypassing most bot-detection layers.
         Falls back to the normal httpx path when curl_cffi is unavailable.
         """
-        if impersonate and _CURL_AVAILABLE and _curl_requests is not None:
+        if impersonate and _CURL_AVAILABLE and _curl_get is not None:
             domain = self._resolve_domain(url)
             self._wait_for_domain(domain)
             merged_headers = {**self._build_headers(), **(headers or {})}
-            resp = _curl_requests.get(
-                url,
-                params=params,
-                headers=merged_headers,
-                impersonate=impersonate,
-                timeout=self._default_timeout,
+            curl_get = _curl_get
+
+            _retryer = retry(
+                retry=retry_if_exception_type(_CURL_TRANSIENT_EXCEPTIONS),
+                stop=stop_after_attempt(self._max_retries),
+                wait=wait_exponential(multiplier=1, min=1, max=10),
+                reraise=True,
+                before_sleep=self._log_retry_attempt,
             )
-            resp.raise_for_status()
+
+            @_retryer
+            def _do_curl_request() -> CurlResponse:
+                resp = curl_get(
+                    url,
+                    params=params,
+                    headers=merged_headers,
+                    impersonate=impersonate,
+                    timeout=self._default_timeout,
+                )
+                resp.raise_for_status()
+                return resp
+
+            resp = _do_curl_request()
             self._domain_timestamps[domain] = time.monotonic()
             return _json.loads(resp.content)
 
@@ -168,7 +209,6 @@ class HttpClient:
             'Accept': 'application/json, text/plain, */*',
             'Accept-Language': 'en-US,en;q=0.9',
         }
-
 
     def _resolve_domain(self, url: str) -> str:
         """Extract a rate-limiting key from *url* (e.g. 'espn.com')."""

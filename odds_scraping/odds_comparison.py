@@ -19,7 +19,6 @@ def _normalize_game(game: dict) -> dict:
     return normalized
 
 
-
 class OddsComparison:
     """Compare odds across multiple sportsbooks"""
 

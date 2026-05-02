@@ -22,7 +22,8 @@ A Python project for scraping NBA odds from multiple sportsbooks and calculating
 | Python **3.12+**    | Runtime                                          |
 | **uv**              | Package manager                                  |
 | **ruff**            | Linter + formatter                               |
-| **ty**              | Type checker                                     |
+| **ty**              | Fast type checker                                |
+| **pyright**         | Static type checker                              |
 | selenium            | Browser automation (DraftKings)                  |
 | httpx               | Async-capable HTTP client with retry logic       |
 | curl-cffi           | TLS fingerprint impersonation (anti-bot bypass)  |
@@ -43,7 +44,10 @@ odds-scraper/
 │   ├── odds_scraper.py          # Sample odds data provider
 │   ├── odds_comparison.py       # Cross-sportsbook comparison (unified schema)
 │   ├── http_client.py           # Resilient HTTP client (retry, rate-limit, UA rotation)
-│   └── live_odds_scraper.py     # Live ESPN & DraftKings scraper
+│   ├── parsers.py               # Shared odds parsing/formatting helpers
+│   ├── espn_scraper.py          # ESPN JSON API adapter + scoreboard fallback
+│   ├── draftkings_scraper.py    # DraftKings Selenium/parsel source adapter
+│   └── live_odds_scraper.py     # Thin live scraper orchestrator
 ├── models/
 │   └── ev_calculator.py         # Expected Value & Kelly Criterion
 ├── data/
@@ -52,9 +56,8 @@ odds-scraper/
 │   └── nba_standings_2025_26.csv
 ├── fixtures/                    # HTML/JSON fixtures for offline tests
 ├── tests/                       # pytest test suite (62 tests)
-├── example_usage.py             # Sample scraper demo
-├── live_example.py              # Live odds demo
 ├── config.json                  # Sportsbook configuration
+├── pyproject.toml               # Project metadata & tool config
 ├── pyproject.toml               # Project metadata & tool config
 ├── uv.lock                      # Dependency lock file
 └── README.md
@@ -78,112 +81,22 @@ cd odds-scraper
 # Install all dependencies (creates .venv + uv.lock)
 uv sync
 
-# Run the sample demo
-uv run python example_usage.py
-
-# Run live scraping (requires Chrome + working selectors)
-uv run python live_example.py
+# Run quality checks
+uv run pytest
 ```
 
 ### Quality Checks
 
 ```bash
-uv run ruff check .      # Lint
-uv run ruff check --fix  # Auto-fix
-uv run ty check          # Type check
-uv run pytest            # Run tests (62 tests)
+uv run ruff format .         # Format
+uv run ruff format --check . # Check formatting
+uv run ruff check .          # Lint
+uv run ruff check --fix      # Auto-fix safe lint issues
+uv run ty check              # Fast type check
+uv run pyright               # Static type check
+uv run pytest                # Run tests (62 tests)
 ```
 
-## 📊 Usage
-
-### Sample Odds Demo
-
-```bash
-uv run python example_usage.py
-```
-
-Output:
-```
-OKC Thunder vs Boston Celtics
-  Date: 2026-04-30
-  Best: DraftKings (-175)
-    ESPN: -180
-    DraftKings: -175
-    FanDuel: -178
-
-TEAM: OKC Thunder
-  Model Probability:     78.0%
-  Sportsbook Probability: 63.6%
-  EV per $100:           $22.57
-  Recommendation:        [BET] Positive EV
-```
-
-### Expected Value Analysis
-
-```python
-from odds_scraping.live_odds_scraper import LiveOddsScraper
-from odds_scraping.odds_comparison import OddsComparison
-from models.ev_calculator import EVCalculator
-
-# Scrape live odds from ESPN (no browser needed)
-scraper = LiveOddsScraper()
-games = scraper.scrape_espn_nba_odds()
-
-# Compare odds across sportsbooks
-# OddsComparison accepts output from both OddsScraper and LiveOddsScraper
-comparison = OddsComparison()
-comparison.add_odds('ESPN', games)
-best = comparison.find_best_odds('moneyline')
-
-# Calculate expected value
-ev_calc = EVCalculator()
-result = ev_calc.evaluate_bet(
-    team='OKC Thunder',
-    model_prob=0.78,       # Your win probability prediction
-    american_odds=-175,    # Sportsbook odds
-    stake=100              # Wager amount
-)
-print(result)
-# {
-#   'team': 'OKC Thunder',
-#   'model_prob': '78.0%',
-#   'book_prob': '63.6%',
-#   'ev_per_stake': '$22.57',
-#   'recommendation': '[BET] Positive EV'
-# }
-```
-
-### Fast JSON + TLS Impersonation
-
-```python
-from odds_scraping.http_client import HttpClient
-
-http = HttpClient()
-
-# Standard request — uses orjson for fast parsing
-data = http.get_json('https://site.api.espn.com/apis/v2/sports/basketball/nba/odds')
-
-# TLS impersonation — presents a real Chrome fingerprint (requires curl_cffi)
-data = http.get_json(
-    'https://sportsbook.draftkings.com/api/odds/v2/odds',
-    impersonate='chrome110',
-)
-
-http.close()
-```
-
-### Parse DraftKings HTML with parsel (no browser)
-
-```python
-from odds_scraping.live_odds_scraper import LiveOddsScraper
-
-# Works with any saved HTML — useful for testing or offline processing
-with open('fixtures/dk-game-lines.html') as f:
-    html = f.read()
-
-games = LiveOddsScraper.parse_draftkings_html(html)
-# Returns list of game dicts with home_team, away_team, spread, moneyline, over_under
-```
 
 ## ⚙️ Configuration
 
@@ -203,12 +116,14 @@ games = LiveOddsScraper.parse_draftkings_html(html)
 
 | Command                | What it does                 |
 | ---------------------- | ---------------------------- |
-| `uv sync`              | Install all dependencies     |
-| `uv run ruff check .`  | Lint the codebase            |
-| `uv run ruff format .` | Auto-format code             |
-| `uv run ty check`      | Type check                   |
-| `uv run pytest`        | Run 62 tests                 |
-| `uv lock --upgrade`    | Update all deps to latest    |
+| `uv sync`                   | Install all dependencies        |
+| `uv run ruff format .`      | Auto-format code                |
+| `uv run ruff format --check .` | Check formatting             |
+| `uv run ruff check .`       | Lint the codebase               |
+| `uv run ty check`           | Fast type check                 |
+| `uv run pyright`            | Static type check               |
+| `uv run pytest`             | Run 62 tests                    |
+| `uv lock --upgrade`         | Update all deps to latest       |
 
 Dependencies use `>=` constraints in `pyproject.toml`. Exact versions are pinned in `uv.lock` (commit this file).
 
@@ -216,20 +131,30 @@ Dependencies use `>=` constraints in `pyproject.toml`. Exact versions are pinned
 
 ```
 LiveOddsScraper
-├── scrape_espn_nba_odds()          ESPN header API → JSON
-│   └── _scrape_espn_scoreboard_fallback()   scoreboard API fallback
-└── scrape_draftkings_nba_odds()    Selenium → page_source
-    └── _parse_draftkings_games()
-        ├── parse_draftkings_html() parsel path (fast, testable)  ← preferred
-        ├── _parse_draftkings_cb_market()   Selenium cb-market path
-        └── _parse_draftkings_event_cells() Selenium legacy fallback
+├── scrape_espn_nba_odds()       delegates to EspnOddsScraper
+├── scrape_draftkings_odds()     delegates to DraftKingsScraper
+├── parse_draftkings_html()      compatibility wrapper for offline HTML parsing
+└── get_all_games()              orchestrates ESPN + DraftKings and displays results
+
+EspnOddsScraper
+├── scrape_nba_odds()            ESPN header API → JSON
+├── scrape_scoreboard_fallback() ESPN scoreboard fallback
+├── parse_header_events()        normalize header API events
+└── parse_scoreboard_events()    normalize scoreboard API events
+
+DraftKingsScraper
+├── scrape_odds()                Selenium page load and browser lifecycle
+└── parse_games()                parser fallback chain
+    ├── parse_html()             parsel path (fast, testable) ← preferred
+    ├── parse_cb_market()        Selenium cb-market path
+    └── parse_event_cells()      Selenium legacy fallback
 
 HttpClient
-├── get()         httpx + tenacity retry + per-domain rate limiting + UA rotation
-└── get_json()    orjson fast parse; curl_cffi impersonation when impersonate= set
+├── get()                        httpx + tenacity retry + per-domain rate limiting + UA rotation
+└── get_json()                   orjson fast parse; curl_cffi impersonation when impersonate= set
 
 OddsComparison
-└── find_best_odds()   _normalize_game() maps both scraper schemas → unified view
+└── find_best_odds()             _normalize_game() maps both scraper schemas → unified view
 ```
 
 ### External Data Caveats
@@ -253,11 +178,7 @@ OddsComparison
 - **Legal**: Web scraping odds is legal in most jurisdictions — check local laws
 - **Rate Limiting**: The `HttpClient` enforces per-domain minimum delays automatically
 - **Terms of Service**: Review each site's ToS before scraping
-- **Not Gambling Advice**: This is an analytical tool, not betting recommendations
-
-## 🤝 Contributing
-
-Found a bug or want to improve it? PRs welcome — just make sure `ruff check .` and `uv run pytest` pass.
+Found a bug or want to improve it? PRs welcome — just make sure `uv run ruff format --check .`, `uv run ruff check .`, `uv run ty check`, `uv run pyright`, and `uv run pytest` pass.
 
 ---
 

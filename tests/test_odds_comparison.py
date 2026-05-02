@@ -1,26 +1,34 @@
 """Unit tests for OddsComparison — cross-sportsbook odds comparison module."""
 
-
 import pytest
 
 from odds_scraping.odds_comparison import OddsComparison
 
 # ── Test fixtures ──────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def dk_odds():
     """DraftKings odds for two games."""
     return [
         {
-            'game_id': 1, 'date': '2026-04-30',
-            'team': 'OKC Thunder', 'opponent': 'Boston Celtics',
-            'moneyline': -175, 'spread': -7.0, 'over_under': 214.0,
+            'game_id': 1,
+            'date': '2026-04-30',
+            'team': 'OKC Thunder',
+            'opponent': 'Boston Celtics',
+            'moneyline': -175,
+            'spread': -7.0,
+            'over_under': 214.0,
             'sportsbook': 'DraftKings',
         },
         {
-            'game_id': 2, 'date': '2026-04-30',
-            'team': 'LA Lakers', 'opponent': 'GS Warriors',
-            'moneyline': -150, 'spread': -3.5, 'over_under': 228.5,
+            'game_id': 2,
+            'date': '2026-04-30',
+            'team': 'LA Lakers',
+            'opponent': 'GS Warriors',
+            'moneyline': -150,
+            'spread': -3.5,
+            'over_under': 228.5,
             'sportsbook': 'DraftKings',
         },
     ]
@@ -31,15 +39,23 @@ def fd_odds():
     """FanDuel odds for the same two games with slightly different lines."""
     return [
         {
-            'game_id': 1, 'date': '2026-04-30',
-            'team': 'OKC Thunder', 'opponent': 'Boston Celtics',
-            'moneyline': -180, 'spread': -7.5, 'over_under': 213.5,
+            'game_id': 1,
+            'date': '2026-04-30',
+            'team': 'OKC Thunder',
+            'opponent': 'Boston Celtics',
+            'moneyline': -180,
+            'spread': -7.5,
+            'over_under': 213.5,
             'sportsbook': 'FanDuel',
         },
         {
-            'game_id': 2, 'date': '2026-04-30',
-            'team': 'LA Lakers', 'opponent': 'GS Warriors',
-            'moneyline': -145, 'spread': -3.0, 'over_under': 229.0,
+            'game_id': 2,
+            'date': '2026-04-30',
+            'team': 'LA Lakers',
+            'opponent': 'GS Warriors',
+            'moneyline': -145,
+            'spread': -3.0,
+            'over_under': 229.0,
             'sportsbook': 'FanDuel',
         },
     ]
@@ -50,21 +66,30 @@ def espn_odds():
     """ESPN odds for the same two games."""
     return [
         {
-            'game_id': 1, 'date': '2026-04-30',
-            'team': 'OKC Thunder', 'opponent': 'Boston Celtics',
-            'moneyline': -178, 'spread': -7.0, 'over_under': 214.5,
+            'game_id': 1,
+            'date': '2026-04-30',
+            'team': 'OKC Thunder',
+            'opponent': 'Boston Celtics',
+            'moneyline': -178,
+            'spread': -7.0,
+            'over_under': 214.5,
             'sportsbook': 'ESPN',
         },
         {
-            'game_id': 2, 'date': '2026-04-30',
-            'team': 'LA Lakers', 'opponent': 'GS Warriors',
-            'moneyline': -148, 'spread': -3.5, 'over_under': 228.0,
+            'game_id': 2,
+            'date': '2026-04-30',
+            'team': 'LA Lakers',
+            'opponent': 'GS Warriors',
+            'moneyline': -148,
+            'spread': -3.5,
+            'over_under': 228.0,
             'sportsbook': 'ESPN',
         },
     ]
 
 
 # ── add_odds ──────────────────────────────────────────────────────────────────
+
 
 def test_add_odds_stores_internal_state(dk_odds):
     """add_odds stores the odds list keyed by sportsbook name."""
@@ -87,6 +112,7 @@ def test_add_odds_multiple_sportsbooks(dk_odds, fd_odds):
 
 
 # ── find_best_odds — moneyline ────────────────────────────────────────────────
+
 
 def test_find_best_odds_moneyline(dk_odds, fd_odds, espn_odds):
     """Higher American odds = better payout. DraftKings has -175 on OKC (highest)."""
@@ -126,6 +152,7 @@ def test_find_best_odds_moneyline_includes_all_book_columns(dk_odds, fd_odds):
 
 # ── find_best_odds — spread ───────────────────────────────────────────────────
 
+
 def test_find_best_odds_spread(dk_odds, fd_odds, espn_odds):
     """Higher spread = more favorable. FD has -3.0 on Lakers (best among books)."""
     comparison = OddsComparison()
@@ -150,6 +177,7 @@ def test_find_best_odds_spread(dk_odds, fd_odds, espn_odds):
 
 # ── find_best_odds — over/under ───────────────────────────────────────────────
 
+
 def test_find_best_odds_over_under(dk_odds, fd_odds, espn_odds):
     """Higher total = better. ESPN has 214.5 on OKC; FD has 229.0 on Lakers."""
     comparison = OddsComparison()
@@ -171,6 +199,7 @@ def test_find_best_odds_over_under(dk_odds, fd_odds, espn_odds):
 
 
 # ── Sportsbook with missing games ─────────────────────────────────────────────
+
 
 def test_sportsbook_missing_games(dk_odds, fd_odds):
     """Sportsbook missing a game only contributes to games it covers."""
@@ -198,6 +227,7 @@ def test_sportsbook_missing_games(dk_odds, fd_odds):
 
 
 # ── Empty / edge cases ────────────────────────────────────────────────────────
+
 
 def test_empty_odds_by_book_returns_empty_list():
     """Calling find_best_odds with no odds added returns an empty list."""
@@ -231,6 +261,7 @@ def test_comparison_results_populated_after_find_best_odds(dk_odds, fd_odds):
 
 
 # ── CSV export ────────────────────────────────────────────────────────────────
+
 
 def test_export_to_csv_writes_file(dk_odds, fd_odds, tmp_path):
     """export_to_csv writes comparison results to the filesystem."""

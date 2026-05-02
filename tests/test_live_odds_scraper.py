@@ -257,6 +257,7 @@ def test_select_scoreboard_odds_falls_back_to_first():
 
 class FakeWebElement:
     """Mock Selenium WebElement for testing cb-market structure."""
+
     def __init__(self, text='', attrs=None, children=None):
         self._text = text
         self._attrs = attrs or {}
@@ -300,6 +301,7 @@ class FakeWebElement:
 
 class FakeSeleniumDriver:
     """Mock Selenium driver with find_elements support."""
+
     def __init__(self, elements):
         self._elements = elements
 
@@ -311,7 +313,7 @@ def test_parse_draftkings_cb_market_structure():
     """Test parsing DraftKings cb-market template (component-builder layout)."""
     away_spread_btn = FakeWebElement(
         text='+7.5',
-        attrs={'data-testid': 'component-builder-market-button-34077039-0HC84578437P750_1'}
+        attrs={'data-testid': 'component-builder-market-button-34077039-0HC84578437P750_1'},
     )
     away_spread_btn._children = [
         FakeWebElement(text='+7.5', attrs={'data-testid': 'button-points-market-board'}),
@@ -320,7 +322,7 @@ def test_parse_draftkings_cb_market_structure():
 
     home_spread_btn = FakeWebElement(
         text='-7.5',
-        attrs={'data-testid': 'component-builder-market-button-34077039-0HC84578437N750_3'}
+        attrs={'data-testid': 'component-builder-market-button-34077039-0HC84578437N750_3'},
     )
     home_spread_btn._children = [
         FakeWebElement(text='-7.5', attrs={'data-testid': 'button-points-market-board'}),
@@ -329,7 +331,7 @@ def test_parse_draftkings_cb_market_structure():
 
     over_btn = FakeWebElement(
         text='O 205.5',
-        attrs={'data-testid': 'component-builder-market-button-34077039-0OU84578437O20550_1'}
+        attrs={'data-testid': 'component-builder-market-button-34077039-0OU84578437O20550_1'},
     )
     over_btn._children = [
         FakeWebElement(text='O', attrs={'data-testid': 'button-title-market-board'}),
@@ -338,24 +340,20 @@ def test_parse_draftkings_cb_market_structure():
     ]
 
     away_ml_btn = FakeWebElement(
-        text='+215',
-        attrs={'data-testid': 'component-builder-market-button-34077039-0ML84578437_1'}
+        text='+215', attrs={'data-testid': 'component-builder-market-button-34077039-0ML84578437_1'}
     )
     away_ml_btn._children = [
         FakeWebElement(text='+215', attrs={'data-testid': 'button-odds-market-board'}),
     ]
 
     home_ml_btn = FakeWebElement(
-        text='-265',
-        attrs={'data-testid': 'component-builder-market-button-34077039-0ML84578437_3'}
+        text='-265', attrs={'data-testid': 'component-builder-market-button-34077039-0ML84578437_3'}
     )
     home_ml_btn._children = [
         FakeWebElement(text='-265', attrs={'data-testid': 'button-odds-market-board'}),
     ]
 
-    away_team = FakeWebElement(
-        text='PHI 76ers', attrs={'class': 'cb-market__label-inner--parlay'}
-    )
+    away_team = FakeWebElement(text='PHI 76ers', attrs={'class': 'cb-market__label-inner--parlay'})
     home_team = FakeWebElement(
         text='BOS Celtics', attrs={'class': 'cb-market__label-inner--parlay'}
     )
@@ -363,10 +361,13 @@ def test_parse_draftkings_cb_market_structure():
     game_template = FakeWebElement(
         attrs={'class': 'cb-market__template--2-columns'},
         children=[
-            away_team, home_team,
-            away_spread_btn, home_spread_btn,
+            away_team,
+            home_team,
+            away_spread_btn,
+            home_spread_btn,
             over_btn,
-            away_ml_btn, home_ml_btn,
+            away_ml_btn,
+            home_ml_btn,
         ],
     )
 
@@ -387,22 +388,18 @@ def test_parse_draftkings_cb_market_structure():
 
 def test_parse_draftkings_games_prefers_cb_market():
     """Test _parse_draftkings_games tries cb-market first, then falls back."""
-    away_team = FakeWebElement(
-        text='PHI 76ers', attrs={'class': 'cb-market__label-inner--parlay'}
-    )
+    away_team = FakeWebElement(text='PHI 76ers', attrs={'class': 'cb-market__label-inner--parlay'})
     home_team = FakeWebElement(
         text='BOS Celtics', attrs={'class': 'cb-market__label-inner--parlay'}
     )
     away_ml_btn = FakeWebElement(
-        text='+215',
-        attrs={'data-testid': 'component-builder-market-button-0ML_1'}
+        text='+215', attrs={'data-testid': 'component-builder-market-button-0ML_1'}
     )
     away_ml_btn._children = [
         FakeWebElement(text='+215', attrs={'data-testid': 'button-odds-market-board'}),
     ]
     home_ml_btn = FakeWebElement(
-        text='-265',
-        attrs={'data-testid': 'component-builder-market-button-0ML_3'}
+        text='-265', attrs={'data-testid': 'component-builder-market-button-0ML_3'}
     )
     home_ml_btn._children = [
         FakeWebElement(text='-265', attrs={'data-testid': 'button-odds-market-board'}),
@@ -423,9 +420,7 @@ def test_parse_draftkings_games_prefers_cb_market():
 
 def test_parse_draftkings_cb_market_skips_incomplete_games():
     """Games with fewer than 2 teams are skipped."""
-    away_team = FakeWebElement(
-        text='PHI 76ers', attrs={'class': 'cb-market__label-inner--parlay'}
-    )
+    away_team = FakeWebElement(text='PHI 76ers', attrs={'class': 'cb-market__label-inner--parlay'})
     game_template = FakeWebElement(
         attrs={'class': 'cb-market__template--2-columns'},
         children=[away_team],
@@ -438,15 +433,12 @@ def test_parse_draftkings_cb_market_skips_incomplete_games():
 
 def test_parse_draftkings_cb_market_multiple_games():
     """Parse multiple games from cb-market templates."""
-    away_team1 = FakeWebElement(
-        text='PHI 76ers', attrs={'class': 'cb-market__label-inner--parlay'}
-    )
+    away_team1 = FakeWebElement(text='PHI 76ers', attrs={'class': 'cb-market__label-inner--parlay'})
     home_team1 = FakeWebElement(
         text='BOS Celtics', attrs={'class': 'cb-market__label-inner--parlay'}
     )
     away_ml1 = FakeWebElement(
-        text='+215',
-        attrs={'data-testid': 'component-builder-market-button-game1-0ML_1'}
+        text='+215', attrs={'data-testid': 'component-builder-market-button-game1-0ML_1'}
     )
     away_ml1._children = [
         FakeWebElement(text='+215', attrs={'data-testid': 'button-odds-market-board'}),
@@ -456,15 +448,12 @@ def test_parse_draftkings_cb_market_multiple_games():
         children=[away_team1, home_team1, away_ml1],
     )
 
-    away_team2 = FakeWebElement(
-        text='ORL Magic', attrs={'class': 'cb-market__label-inner--parlay'}
-    )
+    away_team2 = FakeWebElement(text='ORL Magic', attrs={'class': 'cb-market__label-inner--parlay'})
     home_team2 = FakeWebElement(
         text='DET Pistons', attrs={'class': 'cb-market__label-inner--parlay'}
     )
     away_ml2 = FakeWebElement(
-        text='+280',
-        attrs={'data-testid': 'component-builder-market-button-game2-0ML_1'}
+        text='+280', attrs={'data-testid': 'component-builder-market-button-game2-0ML_1'}
     )
     away_ml2._children = [
         FakeWebElement(text='+280', attrs={'data-testid': 'button-odds-market-board'}),
