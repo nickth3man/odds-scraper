@@ -185,6 +185,7 @@ class OddsScraper:
         if self.config['sportsbooks']['fanduel']['enabled']:
             all_odds.extend(self.scrape_fanduel_odds())
 
+        self.scraped_odds = all_odds
         return all_odds
 
     def export_to_csv(self, filename='data/sample_odds_data.csv'):

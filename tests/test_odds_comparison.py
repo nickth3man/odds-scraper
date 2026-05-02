@@ -199,12 +199,12 @@ def test_sportsbook_missing_games(dk_odds, fd_odds):
 
 # ── Empty / edge cases ────────────────────────────────────────────────────────
 
-def test_empty_odds_by_book_raises_stop_iteration():
-    """Calling find_best_odds with no odds added raises StopIteration."""
+def test_empty_odds_by_book_returns_empty_list():
+    """Calling find_best_odds with no odds added returns an empty list."""
     comparison = OddsComparison()
 
-    with pytest.raises(StopIteration):
-        comparison.find_best_odds('moneyline')
+    result = comparison.find_best_odds('moneyline')
+    assert result == []
 
 
 def test_add_odds_empty_list(dk_odds):

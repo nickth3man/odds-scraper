@@ -21,6 +21,18 @@ from tenacity import (
     wait_exponential,
 )
 
+try:
+    import orjson as _json  # fast JSON; drop-in for stdlib json
+except ImportError:  # pragma: no cover
+    import json as _json  # type: ignore[no-redef]
+
+try:
+    from curl_cffi import requests as _curl_requests  # TLS impersonation
+    _CURL_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _curl_requests = None  # type: ignore[assignment]
+    _CURL_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 # Shared UserAgent (caches browser list internally)
@@ -67,8 +79,7 @@ class HttpClient:
             headers=self._build_headers(),
         )
 
-        # Persistent URL store to reject duplicates across the session
-        self._store = self._new_url_store()
+
 
     # ------------------------------------------------------------------
     # Public API
@@ -109,6 +120,39 @@ class HttpClient:
         self._domain_timestamps[domain] = time.monotonic()
         return _do_request()
 
+    def get_json(
+        self,
+        url: str,
+        *,
+        params: dict | None = None,
+        headers: dict[str, str] | None = None,
+        impersonate: str | None = None,
+    ) -> object:
+        """GET *url* and return parsed JSON using orjson (fast) or stdlib json.
+
+        If *impersonate* is set (e.g. ``'chrome110'``) **and** curl_cffi is
+        installed, the request is sent via ``curl_cffi`` which presents a
+        genuine browser TLS fingerprint, bypassing most bot-detection layers.
+        Falls back to the normal httpx path when curl_cffi is unavailable.
+        """
+        if impersonate and _CURL_AVAILABLE and _curl_requests is not None:
+            domain = self._resolve_domain(url)
+            self._wait_for_domain(domain)
+            merged_headers = {**self._build_headers(), **(headers or {})}
+            resp = _curl_requests.get(
+                url,
+                params=params,
+                headers=merged_headers,
+                impersonate=impersonate,
+                timeout=self._default_timeout,
+            )
+            resp.raise_for_status()
+            self._domain_timestamps[domain] = time.monotonic()
+            return _json.loads(resp.content)
+
+        response = self.get(url, params=params, headers=headers)
+        return _json.loads(response.content)
+
     def close(self) -> None:
         """Close the underlying ``httpx.Client`` and free resources."""
         self._client.close()
@@ -125,12 +169,6 @@ class HttpClient:
             'Accept-Language': 'en-US,en;q=0.9',
         }
 
-    @staticmethod
-    def _new_url_store():
-        """Return a fresh courlan.UrlStore (no compression, default settings)."""
-        from courlan import UrlStore
-
-        return UrlStore(compressed=False)
 
     def _resolve_domain(self, url: str) -> str:
         """Extract a rate-limiting key from *url* (e.g. 'espn.com')."""

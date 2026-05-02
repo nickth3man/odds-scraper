@@ -5,7 +5,7 @@ class EVCalculator:
         """Initialize EV calculator"""
         self.bets = []
 
-    def american_to_probability(self, american_odds: int) -> float:
+    def american_to_probability(self, american_odds: int | float) -> float:
         """
         Convert American odds to implied probability
 
@@ -13,6 +13,10 @@ class EVCalculator:
         -110 odds → 52.4% probability
         +150 odds → 40.0% probability
         """
+        if not isinstance(american_odds, (int, float)):
+            raise TypeError(f'american_odds must be numeric, got {type(american_odds).__name__}')
+        if american_odds == 0:
+            return 1.0
         if american_odds < 0:
             probability = abs(american_odds) / (abs(american_odds) + 100)
         else:

@@ -1,6 +1,25 @@
 import pandas as pd
 
 
+def _normalize_game(game: dict) -> dict:
+    """Return a copy of *game* with unified 'team' and 'opponent' keys.
+
+    Accepts both OddsScraper schema (team/opponent/sportsbook) and
+    LiveOddsScraper schema (home_team/away_team/matchup/source) so that
+    OddsComparison can consume output from either scraper.
+    """
+    if 'team' in game and 'opponent' in game:
+        return game  # already canonical
+    normalized = dict(game)
+    normalized['team'] = game.get('away_team', game.get('home_team', 'Unknown'))
+    normalized['opponent'] = game.get('home_team', 'Unknown')
+    # Map 'source' -> 'sportsbook' if present
+    if 'source' in normalized and 'sportsbook' not in normalized:
+        normalized['sportsbook'] = normalized['source']
+    return normalized
+
+
+
 class OddsComparison:
     """Compare odds across multiple sportsbooks"""
 
@@ -15,14 +34,18 @@ class OddsComparison:
         print(f'[OK] Added {len(odds_list)} odds from {sportsbook}')
 
     def find_best_odds(self, bet_type: str = 'moneyline'):
-        """Find the best odds for each matchup"""
+        """Find the best odds for each matchup."""
         results = []
+
+        if not self.odds_by_book:
+            return results
 
         # Get all games
         first_book_odds = next(iter(self.odds_by_book.values()))
         games = {}
 
-        for game in first_book_odds:
+        for raw_game in first_book_odds:
+            game = _normalize_game(raw_game)
             game_key = f'{game["team"]} vs {game["opponent"]}'
             if game_key not in games:
                 games[game_key] = {
@@ -34,7 +57,8 @@ class OddsComparison:
 
         # Collect odds from all books
         for book, odds_list in self.odds_by_book.items():
-            for game in odds_list:
+            for raw_game in odds_list:
+                game = _normalize_game(raw_game)
                 game_key = f'{game["team"]} vs {game["opponent"]}'
                 if game_key in games:
                     games[game_key]['odds'][book] = game[bet_type]
@@ -49,10 +73,9 @@ class OddsComparison:
                     best_book = book
                     best_value = odds
                 else:
-                    # For moneyline: higher American odds = better payout
-                    # For spread: higher number = more favorable (e.g., -7.0 > -7.5)
-                    # For total: higher number = better for 'over', worse for 'under'
-                    # This picks the book offering the highest numerical odds value
+                    # American odds: less-negative beats more-negative (e.g. -105 > -110);
+                    # among positives, higher is better (e.g. +150 > +120).
+                    # Sorting by numeric value handles both cases correctly.
                     if odds > best_value:
                         best_book = book
                         best_value = odds

@@ -164,12 +164,20 @@ from datetime import datetime
 
 import httpx
 import pandas as pd
-import requests
+
+try:
+    from parsel import Selector as _HtmlSelector
+    _PARSEL_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _HtmlSelector = None  # type: ignore[assignment,misc]
+    _PARSEL_AVAILABLE = False
+
 
 from odds_scraping.http_client import HttpClient
 
 try:
     from selenium import webdriver
+    from selenium.common.exceptions import TimeoutException
     from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support import expected_conditions as EC  # noqa: N812
@@ -178,6 +186,9 @@ try:
     SELENIUM_AVAILABLE = True
 except ImportError:
     SELENIUM_AVAILABLE = False
+
+    class TimeoutException(Exception):  # type: ignore[no-redef]  # noqa: N818
+        """Stub when selenium is not installed."""
 
 
 logger = logging.getLogger(__name__)
@@ -272,7 +283,9 @@ class LiveOddsScraper:
             )
             data = response.json()
 
-            events = data['sports'][0]['leagues'][0]['events']
+            sports = data.get('sports') or []
+            leagues = sports[0].get('leagues', []) if sports else []
+            events = leagues[0].get('events', []) if leagues else []
             games = self._parse_espn_events(events)
 
             if games:
@@ -283,7 +296,7 @@ class LiveOddsScraper:
                 print('[WARN] ESPN: No upcoming games found\n')
                 return []
 
-        except (httpx.HTTPError, requests.exceptions.RequestException, KeyError, IndexError, ValueError) as e:
+        except (httpx.HTTPError, KeyError, IndexError, ValueError) as e:
             print(f'[WARN] ESPN header API failed: {e}')
             return self._scrape_espn_scoreboard_fallback()
 
@@ -355,7 +368,7 @@ class LiveOddsScraper:
                     }
                 )
 
-            except Exception as e:
+            except (KeyError, IndexError, ValueError, AttributeError, TypeError) as e:
                 logger.warning('Failed to parse ESPN event: %s', e)
                 continue
 
@@ -369,7 +382,7 @@ class LiveOddsScraper:
                 params={'dates': datetime.now().strftime('%Y%m%d'), 'limit': 100},
             )
             games = self._parse_espn_scoreboard_events(response.json().get('events', []))
-        except (httpx.HTTPError, requests.exceptions.RequestException, ValueError, AttributeError) as e:
+        except (httpx.HTTPError, ValueError, AttributeError) as e:
             print(f'[ERROR] ESPN Error: {e}\n')
             return []
 
@@ -417,7 +430,7 @@ class LiveOddsScraper:
                         'source': 'ESPN',
                     }
                 )
-            except Exception as e:
+            except (KeyError, IndexError, ValueError, AttributeError, TypeError) as e:
                 logger.warning('Failed to parse ESPN scoreboard event: %s', e)
                 continue
 
@@ -470,7 +483,7 @@ class LiveOddsScraper:
                     )
                 )
                 print('[OK] Page loaded!\n')
-            except Exception:
+            except TimeoutException:
                 print('[WARN] Page took too long to load\n')
                 driver.quit()
                 return []
@@ -486,7 +499,7 @@ class LiveOddsScraper:
             return games
 
         except Exception as e:
-            print(f'[ERROR] DraftKings Error: {e}\n')
+            logger.error('DraftKings scrape failed: %s', e)
             return []
 
         finally:
@@ -494,8 +507,17 @@ class LiveOddsScraper:
                 driver.quit()
 
     def _parse_draftkings_games(self, driver) -> list:
-        """Parse games from DraftKings page using Selenium."""
-        games = []
+        """Parse games from DraftKings page using Selenium.
+
+        When parsel is available, HTML is extracted once from the driver and
+        parsed with CSS selectors — no repeated Selenium element queries.
+        The Selenium paths remain as a fallback.
+        """
+        if _PARSEL_AVAILABLE and _HtmlSelector is not None and hasattr(driver, 'page_source'):
+            html = driver.page_source
+            games = self.parse_draftkings_html(html)
+            if games:
+                return games
 
         # Try new cb-market structure first (component-builder layout)
         games = self._parse_draftkings_cb_market(driver)
@@ -504,6 +526,63 @@ class LiveOddsScraper:
 
         # Fallback to old event-cell structure
         return self._parse_draftkings_event_cells(driver)
+
+
+    @staticmethod
+    def parse_draftkings_html(html: str) -> list:
+        """Parse DraftKings NBA page HTML using parsel CSS selectors.
+
+        Accepts raw HTML string (e.g. from ``driver.page_source``) and returns
+        a list of game dicts with the same schema as the Selenium paths.
+        Returns an empty list when parsel is not installed.
+        """
+        if not _PARSEL_AVAILABLE or _HtmlSelector is None:
+            return []
+
+        sel = _HtmlSelector(text=html)
+        games = []
+
+        for template in sel.css(
+            "[class*='cb-market__template--2-columns'], [class*='cb-market__template--4-columns']"
+        ):
+            try:
+                # Team names
+                team_labels = template.css(
+                    "[class*='cb-market__label-inner--parlay']::text"
+                ).getall()
+                if len(team_labels) < 2:
+                    continue
+                away_team, home_team = team_labels[0].strip(), team_labels[1].strip()
+
+                def _get_btn(sel_scope, testid_fragment: str, attr: str) -> str:
+                    return (
+                        sel_scope.css(
+                            f"button[data-testid*='{testid_fragment}']"
+                            f" [data-testid='{attr}']::text"
+                        ).get() or 'N/A'
+                    ).strip() or 'N/A'
+
+                away_spread = _get_btn(template, '0HC', 'button-points-market-board')
+                away_ml     = _get_btn(template, '0ML', 'button-odds-market-board')
+                ou_title    = _get_btn(template, '0OU', 'button-title-market-board')
+                ou_points   = _get_btn(template, '0OU', 'button-points-market-board')
+                over_total  = ou_points if ou_title.upper() == 'O' else 'N/A'
+
+                games.append({
+                    'date': datetime.now().strftime('%Y-%m-%d'),
+                    'home_team': home_team,
+                    'away_team': away_team,
+                    'matchup': f'{away_team} @ {home_team}',
+                    'spread': away_spread,
+                    'moneyline': away_ml,
+                    'home_moneyline': 'N/A',
+                    'over_under': over_total,
+                    'source': 'DraftKings',
+                })
+            except (AttributeError, ValueError, IndexError):
+                continue
+
+        return games
 
     def _parse_draftkings_cb_market(self, driver) -> list:
         """Parse DraftKings games using cb-market__template structure."""
@@ -586,7 +665,7 @@ class LiveOddsScraper:
                                 elif home_ml == 'N/A':
                                     home_ml = odds
 
-                        except Exception:  # noqa: S112
+                        except (AttributeError, ValueError):
                             continue
 
                     # Use away team perspective for consistency
@@ -691,7 +770,7 @@ class LiveOddsScraper:
             return games
 
         except Exception as e:
-            print(f'Error parsing DraftKings: {e}')
+            logger.warning('Error parsing DraftKings event cells: %s', e)
             return []
 
     def _parse_draftkings_markets(self, outcome_cells, team_name: str) -> tuple[str, str, str]:
