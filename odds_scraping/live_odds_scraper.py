@@ -64,6 +64,11 @@ def _format_american_odds(value) -> str:
 
 
 def _format_line(value) -> str:
+    if value is None:
+        return 'N/A'
+    # Strip o/u prefix from total lines (e.g., 'o205.5' -> '205.5')
+    cleaned = re.sub(r'^[ou]', '', str(value), flags=re.IGNORECASE)
+    return cleaned if cleaned else 'N/A'
     return str(value) if value is not None else 'N/A'
 
 
@@ -143,27 +148,35 @@ class LiveOddsScraper:
 
                 home_team = home.get('displayName', 'Unknown')
                 away_team = away.get('displayName', 'Unknown')
-
-                # Spread: e.g. "DET -3.5" → extract the number with sign
-                spread_detail = odds.get('details', 'N/A')
-                spread_match = re.search(r'([+-]?\d+\.?\d*)$', spread_detail)
-                spread = spread_match.group(1) if spread_match else 'N/A'
-                # Make spread relative to away team
-                if spread != 'N/A' and home_team in spread_detail:
+                # Spread: odds.spread is home-relative — negate for away perspective
+                home_spread = odds.get('spread')
+                if home_spread is not None:
                     with contextlib.suppress(ValueError):
-                        spread = str(-float(spread))
+                        spread_val = -float(home_spread)
+                        spread = f'+{spread_val}' if spread_val > 0 else str(spread_val)
+                else:
+                    spread = 'N/A'
 
                 # Over/under
                 ou = str(odds['overUnder']) if odds.get('overUnder') is not None else 'N/A'
 
-                # Moneyline for away team (the one we show for a straight bet)
+                # Moneyline for both teams
                 away_team_odds = odds.get('awayTeamOdds', {})
-                ml_value = away_team_odds.get('moneyLine')
-                moneyline = (
-                    f'+{ml_value}'
-                    if ml_value and ml_value > 0
-                    else str(ml_value)
-                    if ml_value
+                home_team_odds = odds.get('homeTeamOdds', {})
+                away_ml = away_team_odds.get('moneyLine')
+                home_ml = home_team_odds.get('moneyLine')
+                away_moneyline = (
+                    f'+{away_ml}'
+                    if away_ml is not None and away_ml > 0
+                    else str(away_ml)
+                    if away_ml is not None
+                    else 'N/A'
+                )
+                home_moneyline = (
+                    f'+{home_ml}'
+                    if home_ml is not None and home_ml > 0
+                    else str(home_ml)
+                    if home_ml is not None
                     else 'N/A'
                 )
 
@@ -174,7 +187,8 @@ class LiveOddsScraper:
                         'away_team': away_team,
                         'matchup': f'{away_team} @ {home_team}',
                         'spread': spread,
-                        'moneyline': moneyline,
+                        'moneyline': away_moneyline,
+                        'home_moneyline': home_moneyline,
                         'over_under': ou,
                         'source': 'ESPN',
                     }
@@ -227,6 +241,7 @@ class LiveOddsScraper:
 
                 home_team = home.get('team', {}).get('displayName', 'Unknown')
                 away_team = away.get('team', {}).get('displayName', 'Unknown')
+                home_moneyline = odds.get('moneyline', {}).get('home', {}).get('close', {})
                 away_moneyline = odds.get('moneyline', {}).get('away', {}).get('close', {})
                 away_spread = odds.get('pointSpread', {}).get('away', {}).get('close', {})
                 over_total = odds.get('total', {}).get('over', {}).get('close', {})
@@ -239,6 +254,7 @@ class LiveOddsScraper:
                         'matchup': f'{away_team} @ {home_team}',
                         'spread': _format_line(away_spread.get('line')),
                         'moneyline': _format_american_odds(away_moneyline.get('odds')),
+                        'home_moneyline': _format_american_odds(home_moneyline.get('odds')),
                         'over_under': _format_line(over_total.get('line')),
                         'source': 'ESPN',
                     }
@@ -320,6 +336,204 @@ class LiveOddsScraper:
                 driver.quit()
 
     def _parse_draftkings_games(self, driver) -> list:
+        """Parse games from DraftKings page using Selenium."""
+        games = []
+
+        # Try new cb-market structure first (component-builder layout)
+        games = self._parse_draftkings_cb_market(driver)
+        if games:
+            return games
+
+        # Fallback to old event-cell structure
+        return self._parse_draftkings_event_cells(driver)
+
+    def _parse_draftkings_cb_market(self, driver) -> list:
+        """Parse DraftKings games using cb-market__template structure."""
+        games = []
+
+        try:
+            # Find game templates — each template contains one game
+            templates = driver.find_elements(
+                By.CSS_SELECTOR, "[class*='cb-market__template--2-columns']"
+            )
+
+            if not templates:
+                return []
+
+            for template in templates:
+                try:
+                    # Team names are in cb-market__label-inner--parlay elements
+                    team_elems = template.find_elements(
+                        By.CSS_SELECTOR, "[class*='cb-market__label-inner--parlay']"
+                    )
+
+                    if len(team_elems) < 2:
+                        continue
+
+                    away_team = team_elems[0].text.strip()
+                    home_team = team_elems[1].text.strip()
+
+                    if not away_team or not home_team:
+                        continue
+
+                    # Find all market buttons in this template
+                    buttons = template.find_elements(
+                        By.CSS_SELECTOR,
+                        "button[data-testid*='component-builder-market-button']"
+                    )
+
+                    spread = 'N/A'
+                    moneyline = 'N/A'
+                    ou = 'N/A'
+
+                    away_spread = 'N/A'
+                    home_spread = 'N/A'
+                    away_ml = 'N/A'
+                    home_ml = 'N/A'
+                    over_total = 'N/A'
+
+                    for button in buttons:
+                        try:
+                            testid = button.get_attribute('data-testid') or ''
+                            points_elem = button.find_element(
+                                By.CSS_SELECTOR, "[data-testid='button-points-market-board']"
+                            )
+                            points = points_elem.text.strip() if points_elem else ''
+
+                            odds_elem = button.find_element(
+                                By.CSS_SELECTOR, "[data-testid='button-odds-market-board']"
+                            )
+                            odds = odds_elem.text.strip() if odds_elem else ''
+
+                            title_elem = button.find_element(
+                                By.CSS_SELECTOR, "[data-testid='button-title-market-board']"
+                            )
+                            title = title_elem.text.strip() if title_elem else ''
+
+                            if '0HC' in testid:
+                                # Spread — first is away, second is home
+                                if away_spread == 'N/A':
+                                    away_spread = points
+                                elif home_spread == 'N/A':
+                                    home_spread = points
+                            elif '0OU' in testid:
+                                # Total — extract the number
+                                if over_total == 'N/A' and title.upper() == 'O':
+                                    over_total = points
+                            elif '0ML' in testid:
+                                # Moneyline — first is away, second is home
+                                if away_ml == 'N/A':
+                                    away_ml = odds
+                                elif home_ml == 'N/A':
+                                    home_ml = odds
+
+                        except Exception:  # noqa: S112
+                            continue
+
+                    # Use away team perspective for consistency
+                    spread = away_spread if away_spread != 'N/A' else 'N/A'
+                    moneyline = away_ml if away_ml != 'N/A' else 'N/A'
+                    ou = over_total if over_total != 'N/A' else 'N/A'
+
+                    games.append(
+                        {
+                            'date': datetime.now().strftime('%Y-%m-%d'),
+                            'home_team': home_team,
+                            'away_team': away_team,
+                            'matchup': f'{away_team} @ {home_team}',
+                            'spread': spread,
+                            'moneyline': moneyline,
+                            'home_moneyline': home_ml,
+                            'over_under': ou,
+                            'source': 'DraftKings',
+                        }
+                    )
+
+                except Exception as e:
+                    logger.warning('Failed to parse DraftKings cb-market game: %s', e)
+                    continue
+
+            return games
+
+        except Exception as e:
+            logger.warning('Error parsing DraftKings cb-market structure: %s', e)
+            return []
+
+    def _parse_draftkings_event_cells(self, driver) -> list:
+        """Parse DraftKings games using legacy event-cell structure."""
+        games = []
+
+        try:
+            # Team name elements — DraftKings uses event-cell__name-text (stable partial class)
+            team_elements = driver.find_elements(
+                By.CSS_SELECTOR, "[class*='event-cell__name-text']"
+            )
+
+            if not team_elements:
+                # Fallback: try broader event-cell selector
+                team_elements = driver.find_elements(By.CSS_SELECTOR, "[class*='event-cell__team']")
+
+            if not team_elements:
+                logger.warning('DraftKings: no team elements found — selectors may be stale')
+                return []
+
+            # Teams come in pairs: away, home, away, home, ...
+            for i in range(0, len(team_elements) - 1, 2):
+                try:
+                    away_team = team_elements[i].text.strip()
+                    home_team = team_elements[i + 1].text.strip()
+
+                    if not away_team or not home_team:
+                        continue
+
+                    # Odds: try aria-label on outcome buttons (stable semantic attribute)
+                    moneyline = 'N/A'
+                    spread = 'N/A'
+                    ou = 'N/A'
+
+                    # Find outcome cells near these team elements
+                    game_block = (
+                        team_elements[i].find_element(
+                            By.XPATH,
+                            "./ancestor::*[contains(@class,'sportsbook-table__body') or "
+                            "contains(@class,'event-cell') or "
+                            "contains(@class,'sportsbook-event-accordion')]",
+                        )
+                        if team_elements
+                        else None
+                    )
+
+                    if game_block:
+                        outcome_cells = game_block.find_elements(
+                            By.CSS_SELECTOR,
+                            "button[aria-label*='Moneyline'], [class*='sportsbook-outcome-cell__body']",
+                        )
+                        spread, moneyline, ou = self._parse_draftkings_markets(
+                            outcome_cells, away_team
+                        )
+
+                    games.append(
+                        {
+                            'date': datetime.now().strftime('%Y-%m-%d'),
+                            'home_team': home_team,
+                            'away_team': away_team,
+                            'matchup': f'{away_team} @ {home_team}',
+                            'spread': spread,
+                            'moneyline': moneyline,
+                            'over_under': ou,
+                            'source': 'DraftKings',
+                        }
+                    )
+
+                except Exception as e:
+                    logger.warning('Failed to parse DraftKings game row: %s', e)
+                    continue
+
+            return games
+
+        except Exception as e:
+            print(f'Error parsing DraftKings: {e}')
+            return []
         """Parse games from DraftKings page using Selenium."""
         games = []
 
