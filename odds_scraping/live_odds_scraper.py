@@ -1,9 +1,170 @@
+# =============================================================================
+# DRAFTKINGS NBA BETTING CATEGORIES — TO BE SCRAPED
+# =============================================================================
+# Audited: 2026-05-02 from https://sportsbook.draftkings.com/leagues/basketball/nba
+#
+# URL pattern: /leagues/basketball/nba?category={category}&subcategory={subcategory}
+#
+# TOP-LEVEL TABS:
+# ┌──────────┬──────────┬──────────┐
+# │ Games    │ Futures  │ Quick SGP│
+# └──────────┴──────────┴──────────┘
+#
+# =============================================================================
+# 1. GAMES TAB (category=games) — DEFAULT
+# =============================================================================
+#
+#  1a. GAME LINES (subcategory=game-lines) — DEFAULT [IMPLEMENTED ✓]
+#      URL: ?category=games&subcategory=game-lines
+#      Layout per game (cb-market__template--2-columns):
+#        cb-market__label-inner--parlay = team names (away, home)
+#        Spread column: button[data-testid*='0HC'] > [data-testid='button-points-market-board'] + [data-testid='button-odds-market-board']
+#        Total  column: button[data-testid*='0OU'] > [data-testid='button-title-market-board'] + [data-testid='button-points-market-board'] + [data-testid='button-odds-market-board']
+#        Moneyline col: button[data-testid*='0ML'] > [data-testid='button-odds-market-board']
+#      Current status: _parse_draftkings_cb_market() handles this
+#
+#  1b. PLAYER PROPS (subcategory=player-props) [TODO]
+#      URL: ?category=games&subcategory=player-props&nav_1={prop_type}
+#      Second-level nav (nav_1):
+#        • POINTS           — Over/Under points scored per player
+#        • THREES           — Over/Under 3-pointers made
+#        • REBOUNDS         — Over/Under rebounds
+#        • ASSISTS          — Over/Under assists
+#        • PTS+REB+AST      — Combined points+rebounds+assists
+#        • DOUBLE-DOUBLE    — Player to record a double-double (Yes/No)
+#        • TRIPLE-DOUBLE    — Player to record a triple-double (Yes/No)
+#      Data structure per player row:
+#        Player name + image (linked to /players/basketball/{slug}-odds/{id})
+#        PPG/AST/RPG stat label
+#        Horizontal scrollable threshold buttons with odds (e.g., "25+ -120", "30+ +150")
+#        Buttons use class*='cb-market__button'
+#      TODO: Implement _parse_draftkings_player_props(driver, prop_type)
+#            - Find all player rows per game
+#            - Extract player name, stat type, threshold, odds
+#            - Handle scrollable threshold strip (horizontal scroll buttons)
+#
+#  1c. ALT LINES (subcategory=alt-lines) [TODO]
+#      URL: ?category=games&subcategory=alt-lines&nav_1={alt_type}
+#      Second-level nav (nav_1):
+#        • ALTERNATE SPREAD  — Slider from ±0.5 to ±30.5 with odds per increment
+#        • ALTERNATE TOTAL   — Slider for alternate over/under totals
+#        • MONEYLINE (3-WAY) — Win/Draw/Loss moneyline (includes tie)
+#        • HALFTIME/FULLTIME — Half-time result + Full-time result combo
+#        • QUARTER/FULLTIME  — Quarter result + Full-time result combo
+#      Data structure (Alternate Spread):
+#        Two-column layout per game: away team | home team
+#        Horizontal scrollable slider with half-point increments
+#        Each increment has two buttons: away spread odds + home spread odds
+#        CSS: class*='cb-market__button'
+#        Center slider shows the current spread value
+#      TODO: Implement _parse_draftkings_alt_lines(driver, alt_type)
+#            - Parse the scrollable slider values
+#            - Map each spread/total increment to away/home odds
+#
+#  1d. QUICK HITS (subcategory=quick-hits) [TODO]
+#      URL: ?category=games&subcategory=quick-hits
+#  1d. QUICK HITS (subcategory=quick-hits) [TODO]
+#      URL: ?category=games&subcategory=quick-hits&nav_1={hit_type}
+#      "First occurrence" props — who/what happens FIRST in the game.
+#      Data structure per game:
+#        "1st Points Scorer" header + player rows (image, name, moneyline odds button)
+#        No spread/total/moneyline — just player name + odds for that event
+#      Second-level nav (nav_1):
+#        • 1ST POINT            — First player to score any point
+#        • 1ST MADE THREE       — First player to make a 3-pointer
+#        • 1ST REBOUND          — First player to get a rebound
+#        • 1ST ASSIST           — First player to get an assist
+#        • 1ST BLOCK            — First player to get a block
+#        • 1ST STEAL            — First player to get a steal
+#        • 1ST TEAM FG          — First team to make a field goal
+#        • 1ST TEAM FG - EXACT  — Exact player + team for first FG
+#        • 1ST SCORER - EXACT   — Exact first scorer (player)
+#        • 1ST FG MADE - TYPE   — Type of first FG (dunk/layup/jumper/3pt)
+#        • 1ST THREE - RESULT   — Result of first 3-pt attempt (make/miss)
+#        • 1ST TEAM THREE       — First team to make a 3-pointer
+#        • 1ST MINUTE           — Events in the 1st minute
+#        • POINTS 1ST 3 MINS    — Points scored in first 3 minutes
+#        • TEAM THREES IN 1ST 3 MINS — Team 3-pters in first 3 mins
+#        • THREES IN 1ST 3 MINS      — Total 3-pters in first 3 mins
+#        • TEAM TO SCORE 1ST FG — Which team scores first field goal
+#        • 1ST FG TYPE          — Type of first field goal
+#        • 1ST FG EXACT - TEAM  — Exact team for first FG
+#        • 1ST POSSESSION       — Which team has first possession
+#        • 1ST POSSESSION-EXACT — Exact first possession outcome
+#        • TIME OF 1ST POINT    — Time elapsed before first point
+#      TODO: Implement _parse_draftkings_quick_hits(driver, hit_type)
+#            - Parse game sections (same as other tabs)
+#            - Extract player name, image URL, odds for each event type
+#      Quick single-click bets like "Team to win by 1-10 points"
+#      TODO: Investigate and implement
+#      URL: ?category=games&subcategory=quick-hits
+#      Quick single-click bets like "Team to win by 1-10 points"
+#      TODO: Investigate and implement
+#
+# =============================================================================
+# 2. FUTURES TAB (category=futures)
+# =============================================================================
+#
+#  2a. CHAMPION (subcategory=champion) [TODO]
+#      URL: ?category=futures&subcategory=champion
+#      "Finals Winner" section with team buttons: "OKC Thunder -130", "BOS Celtics +650"
+#      Each button = American odds for that team to win championship
+#      TODO: Implement _parse_draftkings_futures_champion(driver)
+#
+#  2b. PLAYOFFS (subcategory=playoffs) [TODO]
+#      URL: ?category=futures&subcategory=playoffs
+#      TODO: Investigate and implement
+#
+#  2c. CONFERENCE (subcategory=conference) [TODO]
+#      URL: ?category=futures&subcategory=conference
+#      TODO: Investigate and implement
+#
+#  2d. SERIES PROPS (subcategory=series-props) [TODO]
+#      URL: ?category=futures&subcategory=series-props
+#      TODO: Investigate and implement
+#
+#  2e. SERIES PLAYER PROPS (subcategory=series-player-props) [TODO]
+#      URL: ?category=futures&subcategory=series-player-props
+#      TODO: Investigate and implement
+#
+#  2f. SEED TO WIN (subcategory=seed-to-win) [TODO]
+#      URL: ?category=futures&subcategory=seed-to-win
+#      TODO: Investigate and implement
+#
+# =============================================================================
+# 3. QUICK SGP TAB — Same Game Parlay
+# =============================================================================
+#
+#  URL: ?category=games&subcategory=game-lines (then SGP toggle)
+#  Each game has a Quick SGP link: /event/{slug}/{id}?sgpmode=true
+#  TODO: Implement _parse_draftkings_sgp(driver)
+#
+# =============================================================================
+# 4. PER-GAME DATA TO EXTRACT (across all categories)
+# =============================================================================
+#
+#  For each game listing, we can extract:
+#    • away_team (name, logo URL, team page link)
+#    • home_team (name, logo URL, team page link)
+#    • event_id (numeric, e.g., 34077039)
+#    • event_slug (e.g., "phi-76ers-%40-bos-celtics")
+#    • game_date/time (Today/Tomorrow/Mon May 4th + time)
+#    • spread (points + odds for away and home)
+#    • total (over/under + odds)
+#    • moneyline (away + home odds)
+#    • more_bets_link (full event page)
+#    • sgp_link (same-game parlay quick link)
+#
+# ==============================================================================
+
 import contextlib
 import logging
 import re
 from datetime import datetime
 
 import pandas as pd
+from odds_scraping.http_client import HttpClient
+import httpx
 import requests
 
 try:
@@ -57,10 +218,12 @@ def _first_total(text: str) -> str | None:
 def _format_american_odds(value) -> str:
     if value is None:
         return 'N/A'
-    with contextlib.suppress(TypeError, ValueError):
+    try:
         odds = int(value)
         return f'+{odds}' if odds > 0 else str(odds)
-    return str(value)
+    except (TypeError, ValueError):
+        logger.warning('Could not convert odds value to int: %r', value)
+        return str(value)
 
 
 def _format_line(value) -> str:
@@ -69,7 +232,6 @@ def _format_line(value) -> str:
     # Strip o/u prefix from total lines (e.g., 'o205.5' -> '205.5')
     cleaned = re.sub(r'^[ou]', '', str(value), flags=re.IGNORECASE)
     return cleaned if cleaned else 'N/A'
-    return str(value) if value is not None else 'N/A'
 
 
 def _format_event_date(value: str) -> str:
@@ -87,7 +249,7 @@ class LiveOddsScraper:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
             'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
         }
-        self.all_games = []
+        self._http = HttpClient()
 
     # ============ ESPN SCRAPING (JSON API) ============
 
@@ -102,13 +264,10 @@ class LiveOddsScraper:
         print('[Fetching] Live NBA odds from ESPN API...\n')
 
         try:
-            response = requests.get(
+            response = self._http.get(
                 _ESPN_API_URL,
-                headers=self.headers,
                 params=_ESPN_API_PARAMS,
-                timeout=10,
             )
-            response.raise_for_status()
             data = response.json()
 
             events = data['sports'][0]['leagues'][0]['events']
@@ -122,7 +281,7 @@ class LiveOddsScraper:
                 print('[WARN] ESPN: No upcoming games found\n')
                 return []
 
-        except (requests.exceptions.RequestException, KeyError, IndexError, ValueError) as e:
+        except (httpx.HTTPError, requests.exceptions.RequestException, KeyError, IndexError, ValueError) as e:
             print(f'[WARN] ESPN header API failed: {e}')
             return self._scrape_espn_scoreboard_fallback()
 
@@ -203,15 +362,12 @@ class LiveOddsScraper:
     def _scrape_espn_scoreboard_fallback(self) -> list:
         """Fetch equivalent normalized odds from ESPN's scoreboard API shape."""
         try:
-            response = requests.get(
+            response = self._http.get(
                 _ESPN_SCOREBOARD_API_URL,
-                headers=self.headers,
                 params={'dates': datetime.now().strftime('%Y%m%d'), 'limit': 100},
-                timeout=10,
             )
-            response.raise_for_status()
             games = self._parse_espn_scoreboard_events(response.json().get('events', []))
-        except (requests.exceptions.RequestException, ValueError, AttributeError) as e:
+        except (httpx.HTTPError, requests.exceptions.RequestException, ValueError, AttributeError) as e:
             print(f'[ERROR] ESPN Error: {e}\n')
             return []
 
@@ -352,9 +508,10 @@ class LiveOddsScraper:
         games = []
 
         try:
-            # Find game templates — each template contains one game
+            # Find game templates — DraftKings uses both 2-column and 4-column layouts
             templates = driver.find_elements(
-                By.CSS_SELECTOR, "[class*='cb-market__template--2-columns']"
+                By.CSS_SELECTOR,
+                "[class*='cb-market__template--2-columns'], [class*='cb-market__template--4-columns']"
             )
 
             if not templates:
@@ -461,80 +618,6 @@ class LiveOddsScraper:
 
     def _parse_draftkings_event_cells(self, driver) -> list:
         """Parse DraftKings games using legacy event-cell structure."""
-        games = []
-
-        try:
-            # Team name elements — DraftKings uses event-cell__name-text (stable partial class)
-            team_elements = driver.find_elements(
-                By.CSS_SELECTOR, "[class*='event-cell__name-text']"
-            )
-
-            if not team_elements:
-                # Fallback: try broader event-cell selector
-                team_elements = driver.find_elements(By.CSS_SELECTOR, "[class*='event-cell__team']")
-
-            if not team_elements:
-                logger.warning('DraftKings: no team elements found — selectors may be stale')
-                return []
-
-            # Teams come in pairs: away, home, away, home, ...
-            for i in range(0, len(team_elements) - 1, 2):
-                try:
-                    away_team = team_elements[i].text.strip()
-                    home_team = team_elements[i + 1].text.strip()
-
-                    if not away_team or not home_team:
-                        continue
-
-                    # Odds: try aria-label on outcome buttons (stable semantic attribute)
-                    moneyline = 'N/A'
-                    spread = 'N/A'
-                    ou = 'N/A'
-
-                    # Find outcome cells near these team elements
-                    game_block = (
-                        team_elements[i].find_element(
-                            By.XPATH,
-                            "./ancestor::*[contains(@class,'sportsbook-table__body') or "
-                            "contains(@class,'event-cell') or "
-                            "contains(@class,'sportsbook-event-accordion')]",
-                        )
-                        if team_elements
-                        else None
-                    )
-
-                    if game_block:
-                        outcome_cells = game_block.find_elements(
-                            By.CSS_SELECTOR,
-                            "button[aria-label*='Moneyline'], [class*='sportsbook-outcome-cell__body']",
-                        )
-                        spread, moneyline, ou = self._parse_draftkings_markets(
-                            outcome_cells, away_team
-                        )
-
-                    games.append(
-                        {
-                            'date': datetime.now().strftime('%Y-%m-%d'),
-                            'home_team': home_team,
-                            'away_team': away_team,
-                            'matchup': f'{away_team} @ {home_team}',
-                            'spread': spread,
-                            'moneyline': moneyline,
-                            'over_under': ou,
-                            'source': 'DraftKings',
-                        }
-                    )
-
-                except Exception as e:
-                    logger.warning('Failed to parse DraftKings game row: %s', e)
-                    continue
-
-            return games
-
-        except Exception as e:
-            print(f'Error parsing DraftKings: {e}')
-            return []
-        """Parse games from DraftKings page using Selenium."""
         games = []
 
         try:
