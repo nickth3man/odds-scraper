@@ -48,3 +48,6 @@ coverage.xml
 
 # Test fixtures (large HTML snapshots)
 fixtures/
+
+# Temp diff artifacts
+*pr_diff*.txt

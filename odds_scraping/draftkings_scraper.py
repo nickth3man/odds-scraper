@@ -192,7 +192,8 @@ import re
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from .parsers import first_american_odds, first_signed_number, first_total
+from .config import DK_BASE_URL, DK_FUTURES_CHAMPION_URL
+from .parsers import GameOdds, first_american_odds, first_signed_number, first_total
 
 if TYPE_CHECKING:
     from parsel import Selector as HtmlSelector
@@ -216,6 +217,7 @@ class _ByFallback:
 By = _ByFallback
 
 try:
+    from selenium.common.exceptions import NoSuchElementException
     from selenium.webdriver.common.by import By
 
     SELENIUM_AVAILABLE = True
@@ -229,7 +231,32 @@ logger = logging.getLogger(__name__)
 class DraftKingsScraper:
     """Scrape and parse DraftKings NBA odds."""
 
-    def scrape_odds(self) -> list[dict]:
+    @staticmethod
+    def _create_driver():
+        """Create a headless Chrome driver with anti-detection settings."""
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+
+        chrome_options = Options()
+        chrome_options.add_argument('--headless=new')
+        chrome_options.add_argument('--window-size=1920,1080')
+        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_argument(
+            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) '
+            'Chrome/124.0.0.0 Safari/537.36'
+        )
+        chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+
+        driver = webdriver.Chrome(options=chrome_options)
+        driver.execute_cdp_cmd(
+            'Page.addScriptToEvaluateOnNewDocument',
+            {'source': 'Object.defineProperty(navigator, "webdriver", {get: () => undefined})'},
+        )
+        return driver
+
+    def scrape_odds(self) -> list[GameOdds]:
         """
         Scrape live odds from DraftKings using Selenium.
 
@@ -241,9 +268,7 @@ class DraftKingsScraper:
             print('[WARN] Selenium not available. Install with: pip install selenium')
             return []
 
-        from selenium import webdriver
         from selenium.common.exceptions import TimeoutException
-        from selenium.webdriver.chrome.options import Options
         from selenium.webdriver.support import expected_conditions as EC  # noqa: N812
         from selenium.webdriver.support.ui import WebDriverWait
 
@@ -251,26 +276,9 @@ class DraftKingsScraper:
 
         driver = None
         try:
-            chrome_options = Options()
-            chrome_options.add_argument('--headless=new')
-            chrome_options.add_argument('--window-size=1920,1080')
-            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-            chrome_options.add_argument(
-                '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                'AppleWebKit/537.36 (KHTML, like Gecko) '
-                'Chrome/124.0.0.0 Safari/537.36'
-            )
-            chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
-            chrome_options.add_experimental_option('useAutomationExtension', False)
+            driver = self._create_driver()
 
-            # Selenium Manager (built into Selenium 4.6+) handles ChromeDriver automatically
-            driver = webdriver.Chrome(options=chrome_options)
-            driver.execute_cdp_cmd(
-                'Page.addScriptToEvaluateOnNewDocument',
-                {'source': 'Object.defineProperty(navigator, "webdriver", {get: () => undefined})'},
-            )
-
-            driver.get('https://sportsbook.draftkings.com/leagues/basketball/nba')
+            driver.get(DK_BASE_URL)
 
             print('Waiting for DraftKings to load (20 seconds)...')
 
@@ -318,9 +326,7 @@ class DraftKingsScraper:
             print('[WARN] Selenium not available. Install with: pip install selenium')
             return []
 
-        from selenium import webdriver
         from selenium.common.exceptions import TimeoutException
-        from selenium.webdriver.chrome.options import Options
         from selenium.webdriver.support import expected_conditions as EC  # noqa: N812
         from selenium.webdriver.support.ui import WebDriverWait
 
@@ -328,18 +334,8 @@ class DraftKingsScraper:
 
         driver = None
         try:
-            chrome_options = Options()
-            chrome_options.add_argument('--headless=new')
-            chrome_options.add_argument('--window-size=1920,1080')
-            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-            chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
-            chrome_options.add_experimental_option('useAutomationExtension', False)
-
-            driver = webdriver.Chrome(options=chrome_options)
-            driver.get(
-                'https://sportsbook.draftkings.com/leagues/basketball/nba'
-                '?category=futures&subcategory=champion'
-            )
+            driver = self._create_driver()
+            driver.get(DK_FUTURES_CHAMPION_URL)
 
             print('Waiting for DraftKings to load (15 seconds)...')
 
@@ -372,7 +368,7 @@ class DraftKingsScraper:
             if driver:
                 driver.quit()
 
-    def parse_games(self, driver) -> list[dict]:
+    def parse_games(self, driver) -> list[GameOdds]:
         """Parse games from DraftKings page using Selenium.
 
         When parsel is available, HTML is extracted once from the driver and
@@ -394,7 +390,7 @@ class DraftKingsScraper:
         return self.parse_event_cells(driver)
 
     @staticmethod
-    def parse_html(html: str) -> list[dict]:
+    def parse_html(html: str) -> list[GameOdds]:
         """Parse DraftKings NBA page HTML using parsel CSS selectors.
 
         Accepts raw HTML string (e.g. from ``driver.page_source``) and returns
@@ -428,7 +424,15 @@ class DraftKingsScraper:
                     ).strip() or 'N/A'
 
                 away_spread = _get_btn(template, '0HC', 'button-points-market-board')
-                away_ml = _get_btn(template, '0ML', 'button-odds-market-board')
+                ml_values = [
+                    v.strip()
+                    for v in template.css(
+                        "button[data-testid*='0ML'] [data-testid='button-odds-market-board']::text"
+                    ).getall()
+                    if v and v.strip()
+                ]
+                away_ml = ml_values[0] if ml_values else 'N/A'
+                home_ml = ml_values[1] if len(ml_values) > 1 else 'N/A'
                 ou_title = _get_btn(template, '0OU', 'button-title-market-board')
                 ou_points = _get_btn(template, '0OU', 'button-points-market-board')
                 over_total = ou_points if ou_title.upper() == 'O' else 'N/A'
@@ -441,7 +445,7 @@ class DraftKingsScraper:
                         'matchup': f'{away_team} @ {home_team}',
                         'spread': away_spread,
                         'moneyline': away_ml,
-                        'home_moneyline': 'N/A',
+                        'home_moneyline': home_ml,
                         'over_under': over_total,
                         'source': 'DraftKings',
                     }
@@ -451,7 +455,7 @@ class DraftKingsScraper:
 
         return games
 
-    def parse_cb_market(self, driver) -> list[dict]:
+    def parse_cb_market(self, driver) -> list[GameOdds]:
         """Parse DraftKings games using cb-market__template structure."""
         games = []
 
@@ -486,12 +490,7 @@ class DraftKingsScraper:
                         By.CSS_SELECTOR, "button[data-testid*='component-builder-market-button']"
                     )
 
-                    spread = 'N/A'
-                    moneyline = 'N/A'
-                    ou = 'N/A'
-
                     away_spread = 'N/A'
-                    home_spread = 'N/A'
                     away_ml = 'N/A'
                     home_ml = 'N/A'
                     over_total = 'N/A'
@@ -499,45 +498,37 @@ class DraftKingsScraper:
                     for button in buttons:
                         try:
                             testid = button.get_attribute('data-testid') or ''
-                            points_elem = button.find_element(
-                                By.CSS_SELECTOR, "[data-testid='button-points-market-board']"
-                            )
-                            points = points_elem.text.strip() if points_elem else ''
-
-                            odds_elem = button.find_element(
-                                By.CSS_SELECTOR, "[data-testid='button-odds-market-board']"
-                            )
-                            odds = odds_elem.text.strip() if odds_elem else ''
-
-                            title_elem = button.find_element(
-                                By.CSS_SELECTOR, "[data-testid='button-title-market-board']"
-                            )
-                            title = title_elem.text.strip() if title_elem else ''
 
                             if '0HC' in testid:
-                                # Spread — first is away, second is home
+                                points_elem = button.find_element(
+                                    By.CSS_SELECTOR, "[data-testid='button-points-market-board']"
+                                )
+                                points = points_elem.text.strip() if points_elem else ''
                                 if away_spread == 'N/A':
                                     away_spread = points
-                                elif home_spread == 'N/A':
-                                    home_spread = points
                             elif '0OU' in testid:
-                                # Total — extract the number
+                                title_elem = button.find_element(
+                                    By.CSS_SELECTOR, "[data-testid='button-title-market-board']"
+                                )
+                                title = title_elem.text.strip() if title_elem else ''
+                                points_elem = button.find_element(
+                                    By.CSS_SELECTOR, "[data-testid='button-points-market-board']"
+                                )
+                                points = points_elem.text.strip() if points_elem else ''
                                 if over_total == 'N/A' and title.upper() == 'O':
                                     over_total = points
                             elif '0ML' in testid:
-                                # Moneyline — first is away, second is home
+                                odds_elem = button.find_element(
+                                    By.CSS_SELECTOR, "[data-testid='button-odds-market-board']"
+                                )
+                                odds = odds_elem.text.strip() if odds_elem else ''
                                 if away_ml == 'N/A':
                                     away_ml = odds
                                 elif home_ml == 'N/A':
                                     home_ml = odds
 
-                        except (AttributeError, ValueError):
+                        except (AttributeError, ValueError, NoSuchElementException):
                             continue
-
-                    # Use away team perspective for consistency
-                    spread = away_spread if away_spread != 'N/A' else 'N/A'
-                    moneyline = away_ml if away_ml != 'N/A' else 'N/A'
-                    ou = over_total if over_total != 'N/A' else 'N/A'
 
                     games.append(
                         {
@@ -545,10 +536,10 @@ class DraftKingsScraper:
                             'home_team': home_team,
                             'away_team': away_team,
                             'matchup': f'{away_team} @ {home_team}',
-                            'spread': spread,
-                            'moneyline': moneyline,
+                            'spread': away_spread,
+                            'moneyline': away_ml,
                             'home_moneyline': home_ml,
-                            'over_under': ou,
+                            'over_under': over_total,
                             'source': 'DraftKings',
                         }
                     )
@@ -563,7 +554,7 @@ class DraftKingsScraper:
             logger.warning('Error parsing DraftKings cb-market structure: %s', e)
             return []
 
-    def parse_event_cells(self, driver) -> list[dict]:
+    def parse_event_cells(self, driver) -> list[GameOdds]:
         """Parse DraftKings games using legacy event-cell structure."""
         games = []
 
@@ -622,6 +613,7 @@ class DraftKingsScraper:
                             'matchup': f'{away_team} @ {home_team}',
                             'spread': spread,
                             'moneyline': moneyline,
+                            'home_moneyline': 'N/A',
                             'over_under': ou,
                             'source': 'DraftKings',
                         }
