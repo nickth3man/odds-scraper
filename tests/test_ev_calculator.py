@@ -184,7 +184,7 @@ def test_evaluate_bet_zero_stake():
 
     assert result['expected_value_per_stake'] == '$0.00'
     assert result['expected_value_percent'] == '0.0%'
-    assert result['recommendation'] == '[PASS] Slight Negative Expected Value'
+    assert result['recommendation'] == '[PASS] Neutral Expected Value'
 
 
 # ---------------------------------------------------------------------------
