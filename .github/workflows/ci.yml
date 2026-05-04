@@ -32,12 +32,12 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: '3.12'
 
@@ -50,7 +50,7 @@ jobs:
             uv.lock
 
       - name: Sync dependencies
-        run: uv sync --locked --group dev
+        run: uv sync --group dev
 
       - name: Ruff format check
         run: uv run --frozen ruff format --check .
@@ -68,12 +68,12 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: '3.12'
 
@@ -86,7 +86,7 @@ jobs:
             uv.lock
 
       - name: Sync dependencies
-        run: uv sync --locked --group dev
+        run: uv sync --group dev
 
       - name: ty check (advisory while ty is still stabilizing)
         continue-on-error: true
@@ -107,12 +107,12 @@ jobs:
         python-version: ['3.12', '3.13']
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -126,7 +126,7 @@ jobs:
           cache-suffix: py${{ matrix.python-version }}
 
       - name: Sync dependencies
-        run: uv sync --locked --group dev
+        run: uv sync --group dev
 
       - name: Install Playwright browsers when present
         run: |
@@ -148,7 +148,7 @@ jobs:
 
       - name: Upload coverage XML
         if: always() && matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: coverage-xml
           path: coverage.xml
@@ -164,12 +164,12 @@ jobs:
       pull-requests: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           persist-credentials: false
 
       - name: Review dependency changes
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
         with:
           config-file: .github/dependency-review-config.yml
 
@@ -180,12 +180,12 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: '3.12'
 
@@ -198,7 +198,7 @@ jobs:
             uv.lock
 
       - name: Sync dependencies
-        run: uv sync --locked --group dev
+        run: uv sync --group dev
 
       - name: pip-audit
         run: uv run --frozen pip-audit --strict
