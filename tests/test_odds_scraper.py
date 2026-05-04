@@ -3,7 +3,7 @@
 import tempfile
 from pathlib import Path
 
-from odds_scraping.odds_scraper import OddsScraper
+from backend.odds_scraping.odds_scraper import OddsScraper
 
 _REQUIRED_KEYS = {
     'game_id',

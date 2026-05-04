@@ -2,7 +2,7 @@
 
 import pytest
 
-from models.ev_calculator import EVCalculator
+from backend.models.ev_calculator import EVCalculator
 
 # ---------------------------------------------------------------------------
 # american_to_probability

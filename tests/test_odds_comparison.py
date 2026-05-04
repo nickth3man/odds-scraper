@@ -2,7 +2,7 @@
 
 import pytest
 
-from odds_scraping.odds_comparison import OddsComparison
+from backend.odds_scraping.odds_comparison import OddsComparison
 
 # ── Test fixtures ──────────────────────────────────────────────────────────────
 
