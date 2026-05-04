@@ -7,6 +7,14 @@ from backend.odds_scraping.live_odds_scraper import LiveOddsScraper
 from tests.browser_fakes import FakeElement, FakePage
 
 
+class _JsonResponse:
+    def __init__(self, payload: dict):
+        self._payload = payload
+
+    def json(self) -> dict:
+        return self._payload
+
+
 def _load_fixture(filename: str) -> dict:
     fixture_path = Path(__file__).parent.parent / 'src' / 'backend' / 'fixtures' / filename
     with open(fixture_path) as f:
@@ -30,12 +38,92 @@ def test_get_all_games_resets_previous_results(monkeypatch):
         self.all_games.extend([game])
         return [game]
 
+    def scrape_no_draftkings_games(self):
+        return []
+
+    def suppress_display(self, *_args):
+        return None
+
     monkeypatch.setattr(LiveOddsScraper, 'scrape_espn_nba_odds', scrape_espn)
-    monkeypatch.setattr(LiveOddsScraper, 'scrape_draftkings_odds', lambda self: [])
-    monkeypatch.setattr(LiveOddsScraper, 'display_games', lambda *_args: None)
+    monkeypatch.setattr(LiveOddsScraper, 'scrape_draftkings_odds', scrape_no_draftkings_games)
+    monkeypatch.setattr(LiveOddsScraper, 'display_games', suppress_display)
 
     assert scraper.get_all_games() == [game]
     assert scraper.get_all_games() == [game]
+
+
+def test_scrape_draftkings_odds_appends_games(monkeypatch):
+    scraper = LiveOddsScraper()
+    games = [{'matchup': 'OKC Thunder @ Boston Celtics'}]
+
+    def return_games():
+        return games
+
+    monkeypatch.setattr(scraper._dk, 'scrape_odds', return_games)
+
+    assert scraper.scrape_draftkings_odds() == games
+    assert scraper.all_games == games
+
+
+def test_scrape_draftkings_odds_skips_empty_results(monkeypatch):
+    scraper = LiveOddsScraper()
+
+    def return_no_games():
+        return []
+
+    monkeypatch.setattr(scraper._dk, 'scrape_odds', return_no_games)
+
+    assert scraper.scrape_draftkings_odds() == []
+    assert scraper.all_games == []
+
+
+def test_parse_draftkings_html_delegates_to_scraper(monkeypatch):
+    def parse_html_stub(html_content: str):
+        return [{'html': html_content}]
+
+    monkeypatch.setattr(DraftKingsScraper, 'parse_html', parse_html_stub)
+
+    assert LiveOddsScraper.parse_draftkings_html('<html></html>') == [{'html': '<html></html>'}]
+
+
+def test_export_to_csv_returns_none_when_no_games(capsys):
+    scraper = LiveOddsScraper()
+
+    assert scraper.export_to_csv([]) is None
+    assert 'No games to export' in capsys.readouterr().out
+
+
+def test_export_to_csv_writes_dataframe(tmp_path, capsys):
+    scraper = LiveOddsScraper()
+    games = [{'matchup': 'OKC Thunder @ Boston Celtics', 'moneyline': '-135'}]
+    output = tmp_path / 'live-odds.csv'
+
+    frame = scraper.export_to_csv(games, filename=str(output))
+
+    assert frame is not None
+    assert output.exists()
+    printed = capsys.readouterr().out
+    assert '[OK] Live odds exported to' in printed
+    assert 'Total games: 1' in printed
+
+
+def test_display_games_formats_table(capsys):
+    scraper = LiveOddsScraper()
+    games = [{'matchup': 'OKC Thunder @ Boston Celtics', 'moneyline': '-135'}]
+
+    scraper.display_games(games, source='ESPN')
+
+    output = capsys.readouterr().out
+    assert 'LIVE ESPN GAMES' in output
+    assert 'OKC Thunder @ Boston Celtics' in output
+
+
+def test_display_games_skips_empty_input(capsys):
+    scraper = LiveOddsScraper()
+
+    scraper.display_games([], source='ESPN')
+
+    assert capsys.readouterr().out == ''
 
 
 def test_parse_draftkings_games_extracts_spread_moneyline_and_total():
@@ -227,6 +315,125 @@ def test_select_scoreboard_odds_falls_back_to_first():
     selected = scraper.select_scoreboard_odds(odds_list)
     assert selected is not None
     assert selected['id'] == '1'
+
+
+def test_scrape_espn_nba_odds_returns_empty_when_header_api_has_no_games(monkeypatch, capsys):
+    scraper = EspnOddsScraper()
+
+    def return_empty_sports(*_args, **_kwargs):
+        return _JsonResponse({'sports': []})
+
+    monkeypatch.setattr(
+        scraper._http,
+        'get',
+        return_empty_sports,
+    )
+
+    assert scraper.scrape_nba_odds() == []
+    assert '[WARN] ESPN: No upcoming games found' in capsys.readouterr().out
+
+
+def test_parse_header_events_skips_invalid_entries_and_logs_warning(caplog):
+    scraper = EspnOddsScraper()
+    events = [
+        {'competitors': []},
+        {
+            'odds': {'spread': -2.5},
+            'competitors': [{'homeAway': 'home', 'displayName': 'Boston Celtics'}],
+        },
+        {
+            'odds': {'spread': -2.5},
+            'competitors': [
+                {'homeAway': 'neutral', 'displayName': 'Boston Celtics'},
+                {'homeAway': 'away', 'displayName': 'OKC Thunder'},
+            ],
+        },
+        {
+            'odds': 'bad',
+            'competitors': [
+                {'homeAway': 'home', 'displayName': 'Boston Celtics'},
+                {'homeAway': 'away', 'displayName': 'OKC Thunder'},
+            ],
+        },
+    ]
+
+    with caplog.at_level('WARNING'):
+        assert scraper.parse_header_events(events) == []
+
+    assert 'Failed to parse ESPN event' in caplog.text
+
+
+def test_scrape_scoreboard_fallback_returns_empty_on_fetch_error(monkeypatch, capsys):
+    scraper = EspnOddsScraper()
+
+    def raise_bad_payload(*_args, **_kwargs):
+        raise ValueError('bad payload')
+
+    monkeypatch.setattr(
+        scraper._http,
+        'get',
+        raise_bad_payload,
+    )
+
+    assert scraper.scrape_scoreboard_fallback() == []
+    assert '[ERROR] ESPN Error: bad payload' in capsys.readouterr().out
+
+
+def test_scrape_scoreboard_fallback_returns_empty_when_no_games(monkeypatch, capsys):
+    scraper = EspnOddsScraper()
+
+    def return_empty_events(*_args, **_kwargs):
+        return _JsonResponse({'events': []})
+
+    monkeypatch.setattr(
+        scraper._http,
+        'get',
+        return_empty_events,
+    )
+
+    assert scraper.scrape_scoreboard_fallback() == []
+    assert '[WARN] ESPN fallback: No upcoming games found' in capsys.readouterr().out
+
+
+def test_parse_scoreboard_events_skips_invalid_entries_and_logs_warning(caplog):
+    scraper = EspnOddsScraper()
+    events = [
+        {
+            'competitions': [
+                {
+                    'competitors': [{'homeAway': 'away', 'team': {'displayName': 'OKC Thunder'}}],
+                    'odds': [{}],
+                }
+            ]
+        },
+        {
+            'competitions': [
+                {
+                    'competitors': [
+                        {'homeAway': 'away', 'team': {'displayName': 'OKC Thunder'}},
+                        {'homeAway': 'home', 'team': {'displayName': 'Boston Celtics'}},
+                    ],
+                    'odds': [],
+                }
+            ]
+        },
+        {
+            'competitions': [
+                {
+                    'competitors': [
+                        {'homeAway': 'away', 'team': {'displayName': 'OKC Thunder'}},
+                        {'homeAway': 'home', 'team': {'displayName': 'Boston Celtics'}},
+                    ],
+                    'odds': [{'moneyline': 'bad'}],
+                }
+            ]
+        },
+    ]
+
+    with caplog.at_level('WARNING'):
+        assert scraper.parse_scoreboard_events(events) == []
+
+    assert 'Failed to parse ESPN scoreboard event' in caplog.text
 
 
 # ============ cb-market (component-builder) structure tests ============
