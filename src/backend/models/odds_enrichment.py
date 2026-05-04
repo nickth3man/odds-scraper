@@ -28,7 +28,7 @@ def format_expected_value_per_100(
     Args:
         calculator: ``EVCalculator`` instance used for the computation.
         moneyline: Raw moneyline value (e.g. ``'-110'`` or ``'+150'``).
-    model_probability: Win probability from the model (0.0-1.0).
+        model_probability: Win probability from the model (0.0-1.0).
 
     Returns:
         A formatted dollar string such as ``'$5.00'``, or ``'N/A'`` when the
@@ -54,7 +54,7 @@ def enrich_live_odds_rows(
 
     Args:
         games: Sequence of game dictionaries from a scraper.
-    model_probability: Win probability from the model (0.0-1.0).
+        model_probability: Win probability from the model (0.0-1.0).
 
     Returns:
         List of enriched row dictionaries ready for the odds table.
@@ -79,7 +79,7 @@ def recompute_expected_value(rows: list[dict], model_probability: float) -> list
     Args:
         rows: Current table rows (each must contain ``moneyline`` and
             ``home_moneyline`` keys).
-    model_probability: Updated win probability (0.0-1.0).
+        model_probability: Updated win probability (0.0-1.0).
 
     Returns:
         New list of rows with refreshed ``expected_value_per_100`` and
@@ -116,7 +116,7 @@ def merge_source_rows(
         existing_rows: Rows currently displayed in the odds table.
         games: Freshly scraped game dictionaries.
         source: Name of the sportsbook being refreshed (e.g. ``'ESPN'``).
-    model_probability: Win probability from the model (0.0-1.0).
+        model_probability: Win probability from the model (0.0-1.0).
 
     Returns:
         Merged list of rows ready for ``table.update_rows``.
