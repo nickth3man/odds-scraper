@@ -1,14 +1,14 @@
 import json
 from pathlib import Path
 
-from odds_scraping.draftkings_scraper import DraftKingsScraper
-from odds_scraping.espn_scraper import EspnOddsScraper
-from odds_scraping.live_odds_scraper import LiveOddsScraper
+from backend.odds_scraping.draftkings_scraper import DraftKingsScraper
+from backend.odds_scraping.espn_scraper import EspnOddsScraper
+from backend.odds_scraping.live_odds_scraper import LiveOddsScraper
 from tests.selenium_fakes import FakeDriver, FakeWebElement
 
 
 def _load_fixture(filename: str) -> dict:
-    fixture_path = Path(__file__).parent.parent / 'fixtures' / filename
+    fixture_path = Path(__file__).parent.parent / 'src' / 'backend' / 'fixtures' / filename
     with open(fixture_path) as f:
         return json.load(f)
 
@@ -193,7 +193,9 @@ def test_parse_espn_scoreboard_api_fixture():
 
 
 def test_draftkings_fixture_no_odds_table_fails_gracefully():
-    fixture_path = Path(__file__).parent.parent / 'fixtures' / 'dk-game-lines.html'
+    fixture_path = (
+        Path(__file__).parent.parent / 'src' / 'backend' / 'fixtures' / 'dk-game-lines.html'
+    )
     with open(fixture_path, encoding='utf-8') as f:
         html = f.read()
 

@@ -214,12 +214,18 @@ class _ByFallback:
     XPATH = 'xpath'
 
 
+class _NoSuchElementExceptionFallbackError(Exception):
+    """Fallback exception used when Selenium is unavailable."""
+
+
 By = _ByFallback
+NoSuchElementException = _NoSuchElementExceptionFallbackError
 
 try:
-    from selenium.common.exceptions import NoSuchElementException
+    from selenium.common.exceptions import NoSuchElementException as SeleniumNoSuchElementException
     from selenium.webdriver.common.by import By
 
+    NoSuchElementException = SeleniumNoSuchElementException
     SELENIUM_AVAILABLE = True
 except ImportError:
     SELENIUM_AVAILABLE = False
@@ -664,7 +670,6 @@ class DraftKingsScraper:
 
         return spread, moneyline, ou
 
-
     def parse_futures_category(self, driver, bet_type: str) -> list[dict]:
         """Parse a DraftKings futures betting category.
 
@@ -702,12 +707,14 @@ class DraftKingsScraper:
                                 odds = found
                                 break
 
-                        results.append({
-                            'team': team_name,
-                            'odds': odds,
-                            'bet_type': bet_type,
-                            'source': 'DraftKings',
-                        })
+                        results.append(
+                            {
+                                'team': team_name,
+                                'odds': odds,
+                                'bet_type': bet_type,
+                                'source': 'DraftKings',
+                            }
+                        )
                     except Exception as e:
                         logger.warning('Failed to parse futures team row: %s', e)
                         continue

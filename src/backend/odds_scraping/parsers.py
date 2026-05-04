@@ -21,6 +21,7 @@ class GameOdds(TypedDict):
     over_under: str
     source: str
 
+
 logger = logging.getLogger(__name__)
 
 

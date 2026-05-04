@@ -10,9 +10,9 @@ def home() -> None:
         ui.label('NBA odds scraping & expected value calculator').classes('text-gray-500')
 
         with ui.row().classes('gap-4'):
-            ui.button('Live Odds', icon='sports_basketball', on_click=lambda: ui.navigate.to('/odds')).props(
-                'size=lg'
-            )
-            ui.button('EV Calculator', icon='calculate', on_click=lambda: ui.navigate.to('/ev')).props(
-                'size=lg outline'
-            )
+            ui.button(
+                'Live Odds', icon='sports_basketball', on_click=lambda: ui.navigate.to('/odds')
+            ).props('size=lg')
+            ui.button(
+                'EV Calculator', icon='calculate', on_click=lambda: ui.navigate.to('/ev')
+            ).props('size=lg outline')
