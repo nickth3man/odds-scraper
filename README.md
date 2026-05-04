@@ -4,7 +4,7 @@ A Python project for scraping NBA odds from multiple sportsbooks and calculating
 
 ## 📊 Features
 
-- **NiceGUI Dashboard** — Browser-based GUI for live odds and EV analysis (`python -m frontend.gui.main`)
+- **NiceGUI Dashboard** — Browser-based GUI for live odds with always-on EV/100 analysis (`python -m frontend.gui.main`)
 - **Sample Odds Scraper** — Multi-sportsbook odds collection (ESPN, DraftKings, FanDuel)
 - **Live Odds Scraper** — Real-time scraping from ESPN's JSON API + DraftKings via Selenium
 - **TLS Impersonation** — `curl_cffi` browser fingerprinting bypasses bot-detection on protected endpoints
@@ -47,8 +47,7 @@ odds-scraper/
 │   │       ├── main.py          # NiceGUI entry point (python -m frontend.gui.main → localhost:8080)
 │   │       └── pages/
 │   │           ├── home.py      # Landing page with navigation
-│   │           ├── live_odds.py # Live odds table (ESPN + DraftKings)
-│   │           └── ev_calc.py   # EV calculator form + Kelly Criterion
+│   │           └── live_odds.py # Live odds table (ESPN + DraftKings + EV/100)
 │   └── backend/
 │       ├── odds_scraping/
 │       │   ├── __init__.py
@@ -104,9 +103,8 @@ python -m frontend.gui.main
 # Open http://localhost:8080
 ```
 
-- **`/`** — Home: navigate to Live Odds or EV Calculator
-- **`/odds`** — Scrape ESPN and/or DraftKings odds into a searchable table
-- **`/ev`** — Enter model probability + American odds to calculate EV and Kelly %
+- **`/`** — Home: navigate to Live Odds
+- **`/odds`** — Scrape ESPN and/or DraftKings odds into a searchable table with EV/100 analysis
 
 ### Quality Checks
 
@@ -190,7 +188,7 @@ OddsComparison
 
 - [ ] Add more sportsbooks (BetMGM, PointsBet)
 - [ ] Backtesting framework
-- [x] Web dashboard (NiceGUI — `src/frontend/gui/`)
+- [x] Web dashboard with live EV/100 analysis (NiceGUI — `src/frontend/gui/`)
 - [ ] Machine learning win probability model
 - [ ] Automated daily scraping schedule
 - [ ] Playwright network interception replacing Selenium
