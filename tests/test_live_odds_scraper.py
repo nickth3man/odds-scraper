@@ -338,10 +338,14 @@ def test_parse_header_events_skips_invalid_entries_and_logs_warning(caplog):
 
 def test_scrape_scoreboard_fallback_returns_empty_on_fetch_error(monkeypatch, capsys):
     scraper = EspnOddsScraper()
+
+    def raise_bad_payload(*_args, **_kwargs):
+        raise ValueError('bad payload')
+
     monkeypatch.setattr(
         scraper._http,
         'get',
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError('bad payload')),
+        raise_bad_payload,
     )
 
     assert scraper.scrape_scoreboard_fallback() == []

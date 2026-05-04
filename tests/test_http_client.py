@@ -37,7 +37,7 @@ def test_get_merges_headers_and_tracks_domain(monkeypatch):
     seen: dict[str, object] = {}
     waited_on: list[str] = []
 
-    def fake_get(
+    def capture_get_args(
         url: str,
         *,
         params: dict[str, object] | None = None,
@@ -49,7 +49,7 @@ def test_get_merges_headers_and_tracks_domain(monkeypatch):
         return _FakeResponse()
 
     monkeypatch.setattr(client, '_wait_for_domain', lambda domain: waited_on.append(domain))
-    monkeypatch.setattr(client._client, 'get', fake_get)
+    monkeypatch.setattr(client._client, 'get', capture_get_args)
 
     response = client.get(
         'https://site.api.espn.com/apis/v2/sports/basketball/nba',
@@ -71,7 +71,7 @@ def test_get_json_uses_curl_when_impersonation_is_enabled(monkeypatch):
     client = http_client.HttpClient(min_delay=0)
     seen: dict[str, object] = {}
 
-    def fake_curl_get(
+    def capture_curl_get_args(
         url: str,
         *,
         params: dict[str, object] | None = None,
@@ -87,7 +87,7 @@ def test_get_json_uses_curl_when_impersonation_is_enabled(monkeypatch):
         return _FakeCurlResponse(b'{"games": 2}')
 
     monkeypatch.setattr(http_client, '_CURL_AVAILABLE', True)
-    monkeypatch.setattr(http_client, '_curl_get', fake_curl_get)
+    monkeypatch.setattr(http_client, '_curl_get', capture_curl_get_args)
     monkeypatch.setattr(http_client, '_CURL_TRANSIENT_EXCEPTIONS', (Exception,))
 
     result = client.get_json(
