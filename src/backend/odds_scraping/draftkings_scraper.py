@@ -462,19 +462,21 @@ class DraftKingsScraper:
             logger.warning('Error parsing DraftKings cb-market structure: %s', e)
             return []
 
-    def parse_event_cells(self, driver) -> list[GameOdds]:
+    def parse_event_cells(self, page) -> list[GameOdds]:
         """Parse DraftKings games using legacy event-cell structure."""
         games = []
 
         try:
             # Team name elements — DraftKings uses event-cell__name-text (stable partial class)
-            team_elements = driver.find_elements(
-                By.CSS_SELECTOR, "[class*='event-cell__name-text']"
+            team_elements = page.query_selector_all(
+                "[class*='event-cell__name-text']"
             )
 
             if not team_elements:
                 # Fallback: try broader event-cell selector
-                team_elements = driver.find_elements(By.CSS_SELECTOR, "[class*='event-cell__team']")
+                team_elements = page.query_selector_all(
+                    "[class*='event-cell__team']"
+                )
 
             if not team_elements:
                 logger.warning('DraftKings: no team elements found — selectors may be stale')
@@ -483,8 +485,8 @@ class DraftKingsScraper:
             # Teams come in pairs: away, home, away, home, ...
             for i in range(0, len(team_elements) - 1, 2):
                 try:
-                    away_team = team_elements[i].text.strip()
-                    home_team = team_elements[i + 1].text.strip()
+                    away_team = team_elements[i].inner_text().strip()
+                    home_team = team_elements[i + 1].inner_text().strip()
 
                     if not away_team or not home_team:
                         continue
@@ -495,21 +497,16 @@ class DraftKingsScraper:
                     ou = 'N/A'
 
                     # Find outcome cells near these team elements
-                    game_block = (
-                        team_elements[i].find_element(
-                            By.XPATH,
-                            "./ancestor::*[contains(@class,'sportsbook-table__body') or "
-                            "contains(@class,'event-cell') or "
-                            "contains(@class,'sportsbook-event-accordion')]",
-                        )
-                        if team_elements
-                        else None
-                    )
+                    game_block = team_elements[i].query_selector(
+                        "xpath=ancestor::*[contains(@class,'sportsbook-table__body') or "
+                        "contains(@class,'event-cell') or "
+                        "contains(@class,'sportsbook-event-accordion')]"
+                    ) if team_elements else None
 
                     if game_block:
-                        outcome_cells = game_block.find_elements(
-                            By.CSS_SELECTOR,
-                            "button[aria-label*='Moneyline'], [class*='sportsbook-outcome-cell__body']",
+                        outcome_cells = game_block.query_selector_all(
+                            "button[aria-label*='Moneyline'], "
+                            "[class*='sportsbook-outcome-cell__body']"
                         )
                         spread, moneyline, ou = self.parse_markets(outcome_cells, away_team)
 
@@ -543,7 +540,7 @@ class DraftKingsScraper:
         ou = 'N/A'
 
         for cell in outcome_cells:
-            text = cell.text.strip()
+            text = cell.inner_text().strip()
             label = cell.get_attribute('aria-label') or ''
             market_text = f'{label} {text}'
             market_text_lower = market_text.lower()
@@ -572,7 +569,7 @@ class DraftKingsScraper:
 
         return spread, moneyline, ou
 
-    def parse_futures_category(self, driver, bet_type: str) -> list[dict]:
+    def parse_futures_category(self, page, bet_type: str) -> list[dict]:
         """Parse a DraftKings futures betting category.
 
         HTML structure: sportsbook-accordion__wrapper sections contain
@@ -582,29 +579,29 @@ class DraftKingsScraper:
         results: list[dict] = []
 
         try:
-            wrappers = driver.find_elements(
-                By.CSS_SELECTOR, "[class*='sportsbook-accordion__wrapper']"
+            wrappers = page.query_selector_all(
+                "[class*='sportsbook-accordion__wrapper']"
             )
 
             for wrapper in wrappers:
-                teams = wrapper.find_elements(
-                    By.CSS_SELECTOR, "[class*='content-sports-hierarchy-teams__team']"
+                teams = wrapper.query_selector_all(
+                    "[class*='content-sports-hierarchy-teams__team']"
                 )
 
                 for team in teams:
                     try:
                         # Team name is in an <a> tag
-                        name_elem = team.find_element(By.CSS_SELECTOR, 'a')
-                        team_name = name_elem.text.strip()
+                        name_elem = team.query_selector('a')
+                        team_name = name_elem.inner_text().strip() if name_elem else ''
 
                         if not team_name:
                             continue
 
                         # American odds in button text within the team row
                         odds = 'N/A'
-                        buttons = team.find_elements(By.CSS_SELECTOR, 'button')
+                        buttons = team.query_selector_all('button')
                         for btn in buttons:
-                            found = first_american_odds(btn.text.strip())
+                            found = first_american_odds(btn.inner_text().strip())
                             if found:
                                 odds = found
                                 break
@@ -626,20 +623,20 @@ class DraftKingsScraper:
 
         return results
 
-    def parse_futures_champion(self, driver) -> list[dict]:
-        return self.parse_futures_category(driver, 'champion')
+    def parse_futures_champion(self, page) -> list[dict]:
+        return self.parse_futures_category(page, 'champion')
 
-    def parse_futures_playoffs(self, driver) -> list[dict]:
-        return self.parse_futures_category(driver, 'playoffs')
+    def parse_futures_playoffs(self, page) -> list[dict]:
+        return self.parse_futures_category(page, 'playoffs')
 
-    def parse_futures_conference(self, driver) -> list[dict]:
-        return self.parse_futures_category(driver, 'conference')
+    def parse_futures_conference(self, page) -> list[dict]:
+        return self.parse_futures_category(page, 'conference')
 
-    def parse_futures_series_props(self, driver) -> list[dict]:
-        return self.parse_futures_category(driver, 'series_props')
+    def parse_futures_series_props(self, page) -> list[dict]:
+        return self.parse_futures_category(page, 'series_props')
 
-    def parse_futures_series_player_props(self, driver) -> list[dict]:
-        return self.parse_futures_category(driver, 'series_player_props')
+    def parse_futures_series_player_props(self, page) -> list[dict]:
+        return self.parse_futures_category(page, 'series_player_props')
 
-    def parse_futures_seed_to_win(self, driver) -> list[dict]:
-        return self.parse_futures_category(driver, 'seed_to_win')
+    def parse_futures_seed_to_win(self, page) -> list[dict]:
+        return self.parse_futures_category(page, 'seed_to_win')
