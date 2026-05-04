@@ -18,14 +18,14 @@ format:
 	$(UV) run ruff check --fix .
 
 type:
-	-$(UV) run ty check
+	$(UV) run ty check
 	$(UV) run pyright
 
 test:
 	$(UV) run pytest
 
 cov:
-	$(UV) run pytest --cov=src --cov-report=term-missing --cov-fail-under=80
+	$(UV) run pytest --cov-report=term-missing
 
 ci: lint type cov
 

@@ -12,7 +12,7 @@ uv run ruff format --check .
 uv run ruff check .
 uv run ty check
 uv run pyright
-uv run pytest --cov=src --cov-fail-under=80
+uv run pytest
 ```
 
 `ty` is useful as a fast signal, but `pyright` is the blocking type checker.

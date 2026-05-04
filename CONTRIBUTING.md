@@ -22,7 +22,7 @@ uv run ruff format --check .
 uv run ruff check .
 uv run ty check
 uv run pyright
-uv run pytest --cov=src --cov-report=term-missing --cov-fail-under=80
+uv run pytest
 ```
 
 Use `make ci` as a shorter local equivalent when `make` is available.
