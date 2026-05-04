@@ -202,7 +202,7 @@ def test_draftkings_fixture_no_odds_table_fails_gracefully():
     assert len(html) > 10000
     assert 'DraftKings' in html
     assert 'NBA' in html
-    # event-cell__name-text (what the Selenium scraper looks for) is NOT present
+    # event-cell__name-text (what the Playwright scraper looks for) is NOT present
     assert 'event-cell__name-text' not in html
 
 

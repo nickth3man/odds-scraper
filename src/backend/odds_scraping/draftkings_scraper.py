@@ -251,45 +251,39 @@ class DraftKingsScraper:
         pw.stop()
 
     def scrape_odds(self) -> list[GameOdds]:
+        """Scrape live odds from DraftKings using Playwright.
+
+        Playwright launches a stealth-configured Chromium browser, navigates
+        to DraftKings, waits for the game table to load, then passes the page
+        to parse_games() for HTML extraction.
         """
-        Scrape live odds from DraftKings using Selenium.
-
-        DraftKings loads odds dynamically with JavaScript. Selenium Manager
-        (built into Selenium 4.6+) automatically downloads the correct
-        ChromeDriver — no webdriver-manager package required.
-        """
-
-        from selenium.common.exceptions import TimeoutException
-        from selenium.webdriver.support import expected_conditions as EC  # noqa: N812
-        from selenium.webdriver.support.ui import WebDriverWait
-
         print('[Fetching] Live odds from DraftKings (this takes 10-15 seconds)...\n')
 
-        driver = None
+        pw, page = None, None
         try:
-            driver = self._create_driver()
+            pw, page = self._create_page()
 
-            driver.get(DK_BASE_URL)
+            page.goto(DK_BASE_URL, wait_until='domcontentloaded')
 
             print('Waiting for DraftKings to load (20 seconds)...')
 
-            # Wait for the game table — DraftKings uses cb-market or event-cell classes
             try:
-                WebDriverWait(driver, 20).until(
-                    EC.presence_of_element_located(
-                        (By.CSS_SELECTOR, "[class*='cb-market'], [class*='event-cell']")
-                    )
+                page.wait_for_selector(
+                    "[class*='cb-market'], [class*='event-cell']",
+                    timeout=20000,
                 )
                 print('[OK] Page loaded!\n')
-            except TimeoutException:
+            except PlaywrightTimeoutError:
                 print('[WARN] Page took too long to load — saving debug snapshot\n')
-                logger.warning('DraftKings timeout. Page title: %s', driver.title)
-                logger.warning('Page source preview: %.500s', driver.page_source)
-                driver.quit()
+                logger.warning('DraftKings timeout. Page title: %s', page.title())
+                logger.warning(
+                    'Page source preview: %.500s',
+                    page.content()[:500] if page else '',
+                )
                 return []
 
-            logger.info('DraftKings page title: %s', driver.title)
-            games = self.parse_games(driver)
+            logger.info('DraftKings page title: %s', page.title())
+            games = self.parse_games(page)
             logger.info('DraftKings parse_games returned %d games', len(games))
 
             if games:
@@ -304,42 +298,35 @@ class DraftKingsScraper:
             return []
 
         finally:
-            if driver:
-                driver.quit()
+            if pw:
+                self._cleanup(pw)
 
     def scrape_futures_champion(self) -> list[dict]:
-        """Scrape DraftKings futures champion odds using Selenium.
+        """Scrape DraftKings futures champion odds using Playwright.
 
         Navigates to ?category=futures&subcategory=champion and parses
         team names with American championship odds.
         """
-
-        from selenium.common.exceptions import TimeoutException
-        from selenium.webdriver.support import expected_conditions as EC  # noqa: N812
-        from selenium.webdriver.support.ui import WebDriverWait
-
         print('[Fetching] DraftKings futures champion odds...')
 
-        driver = None
+        pw, page = None, None
         try:
-            driver = self._create_driver()
-            driver.get(DK_FUTURES_CHAMPION_URL)
+            pw, page = self._create_page()
+            page.goto(DK_FUTURES_CHAMPION_URL, wait_until='domcontentloaded')
 
             print('Waiting for DraftKings to load (15 seconds)...')
 
             try:
-                WebDriverWait(driver, 15).until(
-                    EC.presence_of_element_located(
-                        (By.CSS_SELECTOR, "[class*='cb-market__button']")
-                    )
+                page.wait_for_selector(
+                    "[class*='cb-market__button']",
+                    timeout=15000,
                 )
                 print('[OK] Champion page loaded!')
-            except TimeoutException:
+            except PlaywrightTimeoutError:
                 print('[WARN] Champion page took too long to load')
-                driver.quit()
                 return []
 
-            results = self.parse_futures_champion(driver)
+            results = self.parse_futures_champion(page)
 
             if results:
                 print(f'[OK] DraftKings Champion: Found {len(results)} teams')
@@ -353,8 +340,8 @@ class DraftKingsScraper:
             return []
 
         finally:
-            if driver:
-                driver.quit()
+            if pw:
+                self._cleanup(pw)
 
     def parse_games(self, driver) -> list[GameOdds]:
         """Parse games from DraftKings page using Selenium.
