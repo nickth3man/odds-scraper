@@ -4,6 +4,10 @@ from typing import cast
 from backend.odds_scraping import http_client
 
 
+class _FakeUserAgentProvider:
+    random = 'Agent/1.0'
+
+
 class _FakeResponse:
     def __init__(self, content: bytes = b'{}'):
         self.content = content
@@ -21,7 +25,7 @@ def test_fallback_user_agent_returns_default_browser_string():
 
 
 def test_build_headers_uses_current_user_agent(monkeypatch):
-    monkeypatch.setattr(http_client, '_ua_generator', types.SimpleNamespace(random='Agent/1.0'))
+    monkeypatch.setattr(http_client, '_ua_generator', _FakeUserAgentProvider())
 
     headers = http_client.HttpClient._build_headers()
 

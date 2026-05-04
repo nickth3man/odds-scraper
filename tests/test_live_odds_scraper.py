@@ -7,6 +7,14 @@ from backend.odds_scraping.live_odds_scraper import LiveOddsScraper
 from tests.browser_fakes import FakeElement, FakePage
 
 
+class _JsonResponse:
+    def __init__(self, payload: dict):
+        self._payload = payload
+
+    def json(self) -> dict:
+        return self._payload
+
+
 def _load_fixture(filename: str) -> dict:
     fixture_path = Path(__file__).parent.parent / 'src' / 'backend' / 'fixtures' / filename
     with open(fixture_path) as f:
@@ -30,9 +38,15 @@ def test_get_all_games_resets_previous_results(monkeypatch):
         self.all_games.extend([game])
         return [game]
 
+    def scrape_no_draftkings_games(self):
+        return []
+
+    def suppress_display(*_args):
+        return None
+
     monkeypatch.setattr(LiveOddsScraper, 'scrape_espn_nba_odds', scrape_espn)
-    monkeypatch.setattr(LiveOddsScraper, 'scrape_draftkings_odds', lambda self: [])
-    monkeypatch.setattr(LiveOddsScraper, 'display_games', lambda *_args: None)
+    monkeypatch.setattr(LiveOddsScraper, 'scrape_draftkings_odds', scrape_no_draftkings_games)
+    monkeypatch.setattr(LiveOddsScraper, 'display_games', suppress_display)
 
     assert scraper.get_all_games() == [game]
     assert scraper.get_all_games() == [game]
@@ -41,7 +55,11 @@ def test_get_all_games_resets_previous_results(monkeypatch):
 def test_scrape_draftkings_odds_appends_games(monkeypatch):
     scraper = LiveOddsScraper()
     games = [{'matchup': 'OKC Thunder @ Boston Celtics'}]
-    monkeypatch.setattr(scraper._dk, 'scrape_odds', lambda: games)
+
+    def return_games():
+        return games
+
+    monkeypatch.setattr(scraper._dk, 'scrape_odds', return_games)
 
     assert scraper.scrape_draftkings_odds() == games
     assert scraper.all_games == games
@@ -49,16 +67,21 @@ def test_scrape_draftkings_odds_appends_games(monkeypatch):
 
 def test_scrape_draftkings_odds_skips_empty_results(monkeypatch):
     scraper = LiveOddsScraper()
-    monkeypatch.setattr(scraper._dk, 'scrape_odds', lambda: [])
+
+    def return_no_games():
+        return []
+
+    monkeypatch.setattr(scraper._dk, 'scrape_odds', return_no_games)
 
     assert scraper.scrape_draftkings_odds() == []
     assert scraper.all_games == []
 
 
 def test_parse_draftkings_html_delegates_to_scraper(monkeypatch):
-    monkeypatch.setattr(
-        DraftKingsScraper, 'parse_html', staticmethod(lambda html: [{'html': html}])
-    )
+    def parse_html_stub(html: str):
+        return [{'html': html}]
+
+    monkeypatch.setattr(DraftKingsScraper, 'parse_html', parse_html_stub)
 
     assert LiveOddsScraper.parse_draftkings_html('<html></html>') == [{'html': '<html></html>'}]
 
@@ -296,10 +319,14 @@ def test_select_scoreboard_odds_falls_back_to_first():
 
 def test_scrape_espn_nba_odds_returns_empty_when_header_api_has_no_games(monkeypatch, capsys):
     scraper = EspnOddsScraper()
+
+    def return_empty_sports(*_args, **_kwargs):
+        return _JsonResponse({'sports': []})
+
     monkeypatch.setattr(
         scraper._http,
         'get',
-        lambda *_args, **_kwargs: type('Resp', (), {'json': lambda self: {'sports': []}})(),
+        return_empty_sports,
     )
 
     assert scraper.scrape_nba_odds() == []
@@ -354,10 +381,14 @@ def test_scrape_scoreboard_fallback_returns_empty_on_fetch_error(monkeypatch, ca
 
 def test_scrape_scoreboard_fallback_returns_empty_when_no_games(monkeypatch, capsys):
     scraper = EspnOddsScraper()
+
+    def return_empty_events(*_args, **_kwargs):
+        return _JsonResponse({'events': []})
+
     monkeypatch.setattr(
         scraper._http,
         'get',
-        lambda *_args, **_kwargs: type('Resp', (), {'json': lambda self: {'events': []}})(),
+        return_empty_events,
     )
 
     assert scraper.scrape_scoreboard_fallback() == []
