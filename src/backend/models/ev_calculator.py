@@ -24,14 +24,16 @@ class EVCalculator:
 
         return probability
 
-    def calculate_ev(self, model_prob: float, american_odds: int, stake: float = 100) -> float:
+    def calculate_ev(
+        self, model_probability: float, american_odds: int, stake: float = 100
+    ) -> float:
         """
         Calculate Expected Value of a bet
 
         EV = (Win Probability x Payout) - (Loss Probability x Stake)
 
         Args:
-            model_prob: Your predicted win probability (0.0 - 1.0)
+            model_probability: Your predicted win probability (0.0 - 1.0)
             american_odds: Sportsbook odds (e.g., -110, +150)
             stake: Amount wagered
 
@@ -45,14 +47,14 @@ class EVCalculator:
             payout = stake * (american_odds / 100)
 
         # Calculate EV
-        win_value = model_prob * payout
-        loss_value = (1 - model_prob) * stake
+        win_value = model_probability * payout
+        loss_value = (1 - model_probability) * stake
         ev = win_value - loss_value
 
         return ev
 
     def evaluate_bet(
-        self, team: str, model_prob: float, american_odds: int, stake: float = 100
+        self, team: str, model_probability: float, american_odds: int, stake: float = 100
     ) -> dict:
         """
         Full evaluation of a potential bet
@@ -64,8 +66,8 @@ class EVCalculator:
         - EV and EV%
         - Recommendation
         """
-        book_prob = self.american_to_probability(american_odds)
-        ev = self.calculate_ev(model_prob, american_odds, stake)
+        sportsbook_probability = self.american_to_probability(american_odds)
+        ev = self.calculate_ev(model_probability, american_odds, stake)
         ev_percent = (ev / stake) * 100
 
         # Determine recommendation
@@ -78,8 +80,8 @@ class EVCalculator:
 
         result = {
             'team': team,
-            'model_prob': f'{model_prob * 100:.1f}%',
-            'book_prob': f'{book_prob * 100:.1f}%',
+            'model_probability': f'{model_probability * 100:.1f}%',
+            'sportsbook_probability': f'{sportsbook_probability * 100:.1f}%',
             'american_odds': american_odds,
             'ev_per_stake': f'${ev:.2f}',
             'ev_percent': f'{ev_percent:.1f}%',
@@ -106,16 +108,16 @@ class EVCalculator:
 
         return kelly_percent
 
-    def display_bet_analysis(self, bets_list: list[dict]):
+    def display_bet_analysis(self, bets: list[dict]):
         """Display formatted bet analysis"""
         print(f'\n{"=" * 100}')
         print('BET ANALYSIS')
         print(f'{"=" * 100}\n')
 
-        for bet in bets_list:
+        for bet in bets:
             print(f'TEAM: {bet["team"]}')
-            print(f'  Model Probability:     {bet["model_prob"]}')
-            print(f'  Sportsbook Probability: {bet["book_prob"]}')
+            print(f'  Model Probability:     {bet["model_probability"]}')
+            print(f'  Sportsbook Probability: {bet["sportsbook_probability"]}')
             print(f'  Odds:                  {bet["american_odds"]}')
             print(f'  EV per $100:           {bet["ev_per_stake"]}')
             print(f'  EV Percentage:         {bet["ev_percent"]}')

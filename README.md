@@ -52,7 +52,20 @@ odds-scraper/
 │   │           ├── home.py      # Landing page with navigation
 │   │           └── live_odds.py # Live odds table (ESPN + DraftKings + EV/100)
 │   └── backend/
-│       ├── odds_scraping/
+│       ├── scrapers/
+│       │   ├── __init__.py                # Public API re-exports
+│       │   ├── orchestrator.py             # LiveOddsScraper — multi-source coordinator
+│       │   ├── comparison.py               # OddsComparison — cross-sportsbook best-line finder
+│       │   ├── sample.py                   # OddsScraper — sample data provider
+│       │   ├── shared/
+│       │   │   ├── http_client.py           # Resilient HTTP client (retry, rate-limit, UA rotation)
+│       │   │   └── parsers.py               # GameOdds TypedDict + parsing/formatter helpers
+│       │   ├── espn/
+│       │   │   ├── config.py                # ESPN API URLs and request parameters
+│       │   │   └── scraper.py               # EspnOddsScraper — JSON API + scoreboard fallback
+│       │   └── draftkings/
+│       │       ├── config.py                # DK URLs + CSS selector constants
+│       │       └── scraper.py               # DraftKingsScraper — Playwright + parsel parser
 │       │   ├── __init__.py
 │       │   ├── odds_scraper.py          # Sample odds data provider
 │       │   ├── odds_comparison.py       # Cross-sportsbook comparison (unified schema)
@@ -146,7 +159,7 @@ uv run pytest                # Run tests (65 tests)
 | `uv run ruff check .`       | Lint the codebase               |
 | `uv run ty check`           | Fast type check                 |
 | `uv run pyright`            | Static type check               |
-| `uv run pytest`             | Run 65 tests                    |
+| `uv run pytest`             | Run 99 tests                    |
 | `uv lock --upgrade`         | Update all deps to latest       |
 
 Dependencies use `>=` constraints in `pyproject.toml`. Exact versions are pinned in `uv.lock` (commit this file).

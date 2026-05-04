@@ -197,8 +197,29 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 from playwright_stealth import Stealth
 
-from .config import DK_BASE_URL, DK_FUTURES_CHAMPION_URL
-from .parsers import GameOdds, first_american_odds, first_signed_number, first_total
+from ..shared.parsers import (
+    GameOdds,
+    extract_first_american_odds,
+    extract_first_signed_number,
+    extract_first_total,
+)
+from .config import (
+    BUTTON_ODDS_DATA_TESTID,
+    BUTTON_POINTS_DATA_TESTID,
+    BUTTON_TITLE_DATA_TESTID,
+    DK_BASE_URL,
+    DK_FUTURES_CHAMPION_URL,
+    EVENT_CELL_NAME_SELECTOR,
+    EVENT_CELL_TEAM_SELECTOR,
+    FUTURES_ACCORDION_SELECTOR,
+    FUTURES_LOAD_SELECTOR,
+    FUTURES_TEAM_ROW_SELECTOR,
+    FUTURES_TEMPLATE_SELECTOR,
+    MARKET_BUTTON_SELECTOR,
+    PAGE_LOAD_SELECTOR,
+    PARLAY_LABEL_SELECTOR,
+    TEMPLATE_SELECTOR,
+)
 
 if TYPE_CHECKING:
     from parsel import Selector as HtmlSelector
@@ -225,13 +246,13 @@ USER_AGENT = (
 
 @dataclass(frozen=True)
 class _BrowserSession:
-    pw: Playwright
+    playwright: Playwright
     browser: Browser
     context: BrowserContext
     page: Page
 
 
-def _close_playwright_resource(resource: Page | BrowserContext | Browser | None) -> None:
+def _close_resource(resource: Page | BrowserContext | Browser | None) -> None:
     if resource is None:
         return
     resource.close()
@@ -243,12 +264,12 @@ class DraftKingsScraper:
     @staticmethod
     def _create_page() -> _BrowserSession:
         """Create a stealth-configured Playwright browser page."""
-        pw = sync_playwright().start()
+        playwright = sync_playwright().start()
         browser: Browser | None = None
         context: BrowserContext | None = None
         page: Page | None = None
         try:
-            browser = pw.chromium.launch(
+            browser = playwright.chromium.launch(
                 headless=True,
                 args=[
                     '--disable-blink-features=AutomationControlled',
@@ -264,12 +285,14 @@ class DraftKingsScraper:
             )
             page = context.new_page()
             Stealth().apply_stealth_sync(page)
-            return _BrowserSession(pw=pw, browser=browser, context=context, page=page)
+            return _BrowserSession(
+                playwright=playwright, browser=browser, context=context, page=page
+            )
         except Exception:
-            _close_playwright_resource(page)
-            _close_playwright_resource(context)
-            _close_playwright_resource(browser)
-            pw.stop()
+            _close_resource(page)
+            _close_resource(context)
+            _close_resource(browser)
+            playwright.stop()
             raise
 
     @staticmethod
@@ -283,10 +306,10 @@ class DraftKingsScraper:
             ('browser', session.browser),
         ):
             try:
-                _close_playwright_resource(resource)
-            except Exception as exc:
-                logger.warning('Failed to close DraftKings Playwright %s: %s', resource_name, exc)
-        session.pw.stop()
+                _close_resource(resource)
+            except Exception as error:
+                logger.warning('Failed to close DraftKings Playwright %s: %s', resource_name, error)
+        session.playwright.stop()
 
     def scrape_odds(self) -> list[GameOdds]:
         """Scrape live odds from DraftKings using Playwright.
@@ -308,7 +331,7 @@ class DraftKingsScraper:
 
             try:
                 page.wait_for_selector(
-                    "[class*='cb-market'], [class*='event-cell']",
+                    PAGE_LOAD_SELECTOR,
                     timeout=20000,
                 )
                 print('[OK] Page loaded!\n')
@@ -332,8 +355,8 @@ class DraftKingsScraper:
 
             return games
 
-        except Exception as e:
-            logger.error('DraftKings scrape failed: %s', e)
+        except Exception as error:
+            logger.error('DraftKings scrape failed: %s', error)
             return []
 
         finally:
@@ -357,7 +380,7 @@ class DraftKingsScraper:
 
             try:
                 page.wait_for_selector(
-                    "[class*='cb-market__button']",
+                    FUTURES_LOAD_SELECTOR,
                     timeout=15000,
                 )
                 print('[OK] Champion page loaded!')
@@ -374,8 +397,8 @@ class DraftKingsScraper:
 
             return results
 
-        except Exception as e:
-            logger.error('DraftKings futures champion scrape failed: %s', e)
+        except Exception as error:
+            logger.error('DraftKings futures champion scrape failed: %s', error)
             return []
 
         finally:
@@ -413,42 +436,38 @@ class DraftKingsScraper:
         if not _PARSEL_AVAILABLE or _HtmlSelector is None:
             return []
 
-        sel = _HtmlSelector(text=html)
+        selector = _HtmlSelector(text=html)
         games = []
 
-        for template in sel.css(
-            "[class*='cb-market__template--2-columns'], [class*='cb-market__template--4-columns']"
-        ):
+        for template in selector.css(TEMPLATE_SELECTOR):
             try:
                 # Team names
-                team_labels = template.css(
-                    "[class*='cb-market__label-inner--parlay']::text"
-                ).getall()
+                team_labels = template.css(f'{PARLAY_LABEL_SELECTOR}::text').getall()
                 if len(team_labels) < 2:
                     continue
                 away_team, home_team = team_labels[0].strip(), team_labels[1].strip()
 
-                def _get_btn(sel_scope, testid_fragment: str, attr: str) -> str:
+                def get_button_text(selector_scope, testid_fragment: str, data_testid: str) -> str:
                     return (
-                        sel_scope.css(
-                            f"button[data-testid*='{testid_fragment}'] [data-testid='{attr}']::text"
+                        selector_scope.css(
+                            f"button[data-testid*='{testid_fragment}'] [data-testid='{data_testid}']::text"
                         ).get()
                         or 'N/A'
                     ).strip() or 'N/A'
 
-                away_spread = _get_btn(template, '0HC', 'button-points-market-board')
-                ml_values = [
-                    v.strip()
-                    for v in template.css(
-                        "button[data-testid*='0ML'] [data-testid='button-odds-market-board']::text"
+                away_spread = get_button_text(template, '0HC', BUTTON_POINTS_DATA_TESTID)
+                moneyline_values = [
+                    value.strip()
+                    for value in template.css(
+                        f"button[data-testid*='0ML'] [data-testid='{BUTTON_ODDS_DATA_TESTID}']::text"
                     ).getall()
-                    if v and v.strip()
+                    if value and value.strip()
                 ]
-                away_ml = ml_values[0] if ml_values else 'N/A'
-                home_ml = ml_values[1] if len(ml_values) > 1 else 'N/A'
-                ou_title = _get_btn(template, '0OU', 'button-title-market-board')
-                ou_points = _get_btn(template, '0OU', 'button-points-market-board')
-                over_total = ou_points if ou_title.upper() == 'O' else 'N/A'
+                away_moneyline = moneyline_values[0] if moneyline_values else 'N/A'
+                home_moneyline = moneyline_values[1] if len(moneyline_values) > 1 else 'N/A'
+                over_under_title = get_button_text(template, '0OU', BUTTON_TITLE_DATA_TESTID)
+                over_under_points = get_button_text(template, '0OU', BUTTON_POINTS_DATA_TESTID)
+                over_total = over_under_points if over_under_title.upper() == 'O' else 'N/A'
 
                 games.append(
                     {
@@ -457,8 +476,8 @@ class DraftKingsScraper:
                         'away_team': away_team,
                         'matchup': f'{away_team} @ {home_team}',
                         'spread': away_spread,
-                        'moneyline': away_ml,
-                        'home_moneyline': home_ml,
+                        'moneyline': away_moneyline,
+                        'home_moneyline': home_moneyline,
                         'over_under': over_total,
                         'source': 'DraftKings',
                     }
@@ -474,9 +493,7 @@ class DraftKingsScraper:
 
         try:
             # Find game templates — DraftKings uses both 2-column and 4-column layouts
-            templates = page.query_selector_all(
-                "[class*='cb-market__template--2-columns'], [class*='cb-market__template--4-columns']"
-            )
+            templates = page.query_selector_all(TEMPLATE_SELECTOR)
 
             if not templates:
                 return []
@@ -484,27 +501,23 @@ class DraftKingsScraper:
             for template in templates:
                 try:
                     # Team names are in cb-market__label-inner--parlay elements
-                    team_elems = template.query_selector_all(
-                        "[class*='cb-market__label-inner--parlay']"
-                    )
+                    team_elements = template.query_selector_all(PARLAY_LABEL_SELECTOR)
 
-                    if len(team_elems) < 2:
+                    if len(team_elements) < 2:
                         continue
 
-                    away_team = team_elems[0].inner_text().strip()
-                    home_team = team_elems[1].inner_text().strip()
+                    away_team = team_elements[0].inner_text().strip()
+                    home_team = team_elements[1].inner_text().strip()
 
                     if not away_team or not home_team:
                         continue
 
                     # Find all market buttons in this template
-                    buttons = template.query_selector_all(
-                        "button[data-testid*='component-builder-market-button']"
-                    )
+                    buttons = template.query_selector_all(MARKET_BUTTON_SELECTOR)
 
                     away_spread = 'N/A'
-                    away_ml = 'N/A'
-                    home_ml = 'N/A'
+                    away_moneyline = 'N/A'
+                    home_moneyline = 'N/A'
                     over_total = 'N/A'
 
                     for button in buttons:
@@ -512,32 +525,36 @@ class DraftKingsScraper:
                             testid = button.get_attribute('data-testid') or ''
 
                             if '0HC' in testid:
-                                points_elem = button.query_selector(
-                                    "[data-testid='button-points-market-board']"
+                                points_element = button.query_selector(
+                                    f"[data-testid='{BUTTON_POINTS_DATA_TESTID}']"
                                 )
-                                points = points_elem.inner_text().strip() if points_elem else ''
+                                points = (
+                                    points_element.inner_text().strip() if points_element else ''
+                                )
                                 if away_spread == 'N/A':
                                     away_spread = points
                             elif '0OU' in testid:
-                                title_elem = button.query_selector(
-                                    "[data-testid='button-title-market-board']"
+                                title_element = button.query_selector(
+                                    f"[data-testid='{BUTTON_TITLE_DATA_TESTID}']"
                                 )
-                                title = title_elem.inner_text().strip() if title_elem else ''
-                                points_elem = button.query_selector(
-                                    "[data-testid='button-points-market-board']"
+                                title = title_element.inner_text().strip() if title_element else ''
+                                points_element = button.query_selector(
+                                    f"[data-testid='{BUTTON_POINTS_DATA_TESTID}']"
                                 )
-                                points = points_elem.inner_text().strip() if points_elem else ''
+                                points = (
+                                    points_element.inner_text().strip() if points_element else ''
+                                )
                                 if over_total == 'N/A' and title.upper() == 'O':
                                     over_total = points
                             elif '0ML' in testid:
-                                odds_elem = button.query_selector(
-                                    "[data-testid='button-odds-market-board']"
+                                odds_element = button.query_selector(
+                                    f"[data-testid='{BUTTON_ODDS_DATA_TESTID}']"
                                 )
-                                odds = odds_elem.inner_text().strip() if odds_elem else ''
-                                if away_ml == 'N/A':
-                                    away_ml = odds
-                                elif home_ml == 'N/A':
-                                    home_ml = odds
+                                odds = odds_element.inner_text().strip() if odds_element else ''
+                                if away_moneyline == 'N/A':
+                                    away_moneyline = odds
+                                elif home_moneyline == 'N/A':
+                                    home_moneyline = odds
 
                         except (AttributeError, ValueError):
                             continue
@@ -549,21 +566,21 @@ class DraftKingsScraper:
                             'away_team': away_team,
                             'matchup': f'{away_team} @ {home_team}',
                             'spread': away_spread,
-                            'moneyline': away_ml,
-                            'home_moneyline': home_ml,
+                            'moneyline': away_moneyline,
+                            'home_moneyline': home_moneyline,
                             'over_under': over_total,
                             'source': 'DraftKings',
                         }
                     )
 
-                except Exception as e:
-                    logger.warning('Failed to parse DraftKings cb-market game: %s', e)
+                except Exception as error:
+                    logger.warning('Failed to parse DraftKings cb-market game: %s', error)
                     continue
 
             return games
 
-        except Exception as e:
-            logger.warning('Error parsing DraftKings cb-market structure: %s', e)
+        except Exception as error:
+            logger.warning('Error parsing DraftKings cb-market structure: %s', error)
             return []
 
     def parse_event_cells(self, page) -> list[GameOdds]:
@@ -572,21 +589,21 @@ class DraftKingsScraper:
 
         try:
             # Team name elements — DraftKings uses event-cell__name-text (stable partial class)
-            team_elements = page.query_selector_all("[class*='event-cell__name-text']")
+            team_elements = page.query_selector_all(EVENT_CELL_NAME_SELECTOR)
 
             if not team_elements:
                 # Fallback: try broader event-cell selector
-                team_elements = page.query_selector_all("[class*='event-cell__team']")
+                team_elements = page.query_selector_all(EVENT_CELL_TEAM_SELECTOR)
 
             if not team_elements:
                 logger.warning('DraftKings: no team elements found — selectors may be stale')
                 return []
 
             # Teams come in pairs: away, home, away, home, ...
-            for i in range(0, len(team_elements) - 1, 2):
+            for team_index in range(0, len(team_elements) - 1, 2):
                 try:
-                    away_team = team_elements[i].inner_text().strip()
-                    home_team = team_elements[i + 1].inner_text().strip()
+                    away_team = team_elements[team_index].inner_text().strip()
+                    home_team = team_elements[team_index + 1].inner_text().strip()
 
                     if not away_team or not home_team:
                         continue
@@ -594,10 +611,10 @@ class DraftKingsScraper:
                     # Odds: try aria-label on outcome buttons (stable semantic attribute)
                     moneyline = 'N/A'
                     spread = 'N/A'
-                    ou = 'N/A'
+                    over_under = 'N/A'
 
                     # Find outcome cells near these team elements
-                    game_block = team_elements[i].query_selector(
+                    game_block = team_elements[team_index].query_selector(
                         "xpath=./ancestor::*[contains(@class,'sportsbook-table__body') or "
                         "contains(@class,'event-cell') or "
                         "contains(@class,'sportsbook-event-accordion')]"
@@ -608,7 +625,7 @@ class DraftKingsScraper:
                             "button[aria-label*='Moneyline'], "
                             "[class*='sportsbook-outcome-cell__body']"
                         )
-                        spread, moneyline, ou = self.parse_markets(outcome_cells, away_team)
+                        spread, moneyline, over_under = self.parse_markets(outcome_cells, away_team)
 
                     games.append(
                         {
@@ -619,25 +636,25 @@ class DraftKingsScraper:
                             'spread': spread,
                             'moneyline': moneyline,
                             'home_moneyline': 'N/A',
-                            'over_under': ou,
+                            'over_under': over_under,
                             'source': 'DraftKings',
                         }
                     )
 
-                except Exception as e:
-                    logger.warning('Failed to parse DraftKings game row: %s', e)
+                except Exception as error:
+                    logger.warning('Failed to parse DraftKings game row: %s', error)
                     continue
 
             return games
 
-        except Exception as e:
-            logger.warning('Error parsing DraftKings event cells: %s', e)
+        except Exception as error:
+            logger.warning('Error parsing DraftKings event cells: %s', error)
             return []
 
     def parse_markets(self, outcome_cells, team_name: str) -> tuple[str, str, str]:
         spread = 'N/A'
         moneyline = 'N/A'
-        ou = 'N/A'
+        over_under = 'N/A'
 
         for cell in outcome_cells:
             text = cell.inner_text().strip()
@@ -646,7 +663,7 @@ class DraftKingsScraper:
             market_text_lower = market_text.lower()
 
             if moneyline == 'N/A' and 'moneyline' in market_text_lower:
-                odds = first_american_odds(market_text)
+                odds = extract_first_american_odds(market_text)
                 if odds:
                     moneyline = odds
 
@@ -655,39 +672,39 @@ class DraftKingsScraper:
                 and 'spread' in market_text_lower
                 and team_name.lower() in market_text_lower
             ):
-                value = first_signed_number(market_text)
+                value = extract_first_signed_number(market_text)
                 if value:
                     spread = value
 
-            if ou == 'N/A' and (
+            if over_under == 'N/A' and (
                 'total' in market_text_lower
                 or re.search(r'\b(over|under|o|u)\b', market_text_lower)
             ):
-                value = first_total(market_text)
+                value = extract_first_total(market_text)
                 if value:
-                    ou = value
+                    over_under = value
 
-        return spread, moneyline, ou
+        return spread, moneyline, over_under
 
     def _parse_futures_buttons(self, page, bet_type: str) -> list[dict]:
         results: list[dict] = []
-        templates = page.query_selector_all(
-            "[class*='cb-market__template'], [class*='sportsbook-accordion__wrapper']"
-        )
+        templates = page.query_selector_all(FUTURES_TEMPLATE_SELECTOR)
 
         for template in templates:
-            buttons = template.query_selector_all("[class*='cb-market__button'], button")
+            buttons = template.query_selector_all(f'{FUTURES_LOAD_SELECTOR}, button')
             for button in buttons:
-                title = button.query_selector("[data-testid='button-title-market-board']")
+                title = button.query_selector(f"[data-testid='{BUTTON_TITLE_DATA_TESTID}']")
                 team_name = title.inner_text().strip() if title else ''
                 if not team_name:
                     continue
 
-                odds_elem = button.query_selector("[data-testid='button-odds-market-board']")
+                odds_element = button.query_selector(f"[data-testid='{BUTTON_ODDS_DATA_TESTID}']")
                 odds_text = (
-                    odds_elem.inner_text().strip() if odds_elem else button.inner_text().strip()
+                    odds_element.inner_text().strip()
+                    if odds_element
+                    else button.inner_text().strip()
                 )
-                odds = first_american_odds(odds_text) or 'N/A'
+                odds = extract_first_american_odds(odds_text) or 'N/A'
                 results.append(
                     {
                         'team': team_name,
@@ -709,18 +726,16 @@ class DraftKingsScraper:
         results: list[dict] = []
 
         try:
-            wrappers = page.query_selector_all("[class*='sportsbook-accordion__wrapper']")
+            wrappers = page.query_selector_all(FUTURES_ACCORDION_SELECTOR)
 
             for wrapper in wrappers:
-                teams = wrapper.query_selector_all(
-                    "[class*='content-sports-hierarchy-teams__team']"
-                )
+                teams = wrapper.query_selector_all(FUTURES_TEAM_ROW_SELECTOR)
 
                 for team in teams:
                     try:
                         # Team name is in an <a> tag
-                        name_elem = team.query_selector('a')
-                        team_name = name_elem.inner_text().strip() if name_elem else ''
+                        name_element = team.query_selector('a')
+                        team_name = name_element.inner_text().strip() if name_element else ''
 
                         if not team_name:
                             continue
@@ -728,8 +743,8 @@ class DraftKingsScraper:
                         # American odds in button text within the team row
                         odds = 'N/A'
                         buttons = team.query_selector_all('button')
-                        for btn in buttons:
-                            found = first_american_odds(btn.inner_text().strip())
+                        for button in buttons:
+                            found = extract_first_american_odds(button.inner_text().strip())
                             if found:
                                 odds = found
                                 break
@@ -742,12 +757,12 @@ class DraftKingsScraper:
                                 'source': 'DraftKings',
                             }
                         )
-                    except Exception as e:
-                        logger.warning('Failed to parse futures team row: %s', e)
+                    except Exception as error:
+                        logger.warning('Failed to parse futures team row: %s', error)
                         continue
 
-        except Exception as e:
-            logger.warning('Failed to parse DraftKings futures %s: %s', bet_type, e)
+        except Exception as error:
+            logger.warning('Failed to parse DraftKings futures %s: %s', bet_type, error)
 
         return results or self._parse_futures_buttons(page, bet_type)
 

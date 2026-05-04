@@ -24,26 +24,26 @@ class OddsComparison:
 
     def __init__(self):
         """Initialize the odds comparison tool"""
-        self.odds_by_book = {}
+        self.odds_by_sportsbook = {}
         self.comparison_results = []
 
     def add_odds(self, sportsbook: str, odds_list: list[dict]):
         """Add odds from a sportsbook"""
-        self.odds_by_book[sportsbook] = odds_list
+        self.odds_by_sportsbook[sportsbook] = odds_list
         print(f'[OK] Added {len(odds_list)} odds from {sportsbook}')
 
     def find_best_odds(self, bet_type: str = 'moneyline'):
         """Find the best odds for each matchup."""
         results = []
 
-        if not self.odds_by_book:
+        if not self.odds_by_sportsbook:
             return results
 
         # Get all games
-        first_book_odds = next(iter(self.odds_by_book.values()))
+        first_sportsbook_odds = next(iter(self.odds_by_sportsbook.values()))
         games = {}
 
-        for raw_game in first_book_odds:
+        for raw_game in first_sportsbook_odds:
             game = _normalize_game(raw_game)
             game_key = f'{game["team"]} vs {game["opponent"]}'
             if game_key not in games:
@@ -54,42 +54,42 @@ class OddsComparison:
                     'odds': {},
                 }
 
-        # Collect odds from all books
-        for book, odds_list in self.odds_by_book.items():
+        # Collect odds from all sportsbooks
+        for sportsbook, odds_list in self.odds_by_sportsbook.items():
             for raw_game in odds_list:
                 game = _normalize_game(raw_game)
                 game_key = f'{game["team"]} vs {game["opponent"]}'
                 if game_key in games:
-                    games[game_key]['odds'][book] = game[bet_type]
+                    games[game_key]['odds'][sportsbook] = game[bet_type]
 
         # Find best odds for each game
         for _game_key, game_data in games.items():
-            best_book = None
+            best_sportsbook = None
             best_value = None
 
-            for book, odds in game_data['odds'].items():
+            for sportsbook, odds in game_data['odds'].items():
                 if best_value is None:
-                    best_book = book
+                    best_sportsbook = sportsbook
                     best_value = odds
                 else:
                     # American odds: less-negative beats more-negative (e.g. -105 > -110);
                     # among positives, higher is better (e.g. +150 > +120).
                     # Sorting by numeric value handles both cases correctly.
                     if odds > best_value:
-                        best_book = book
+                        best_sportsbook = sportsbook
                         best_value = odds
             result = {
                 'date': game_data['date'],
                 'team': game_data['team'],
                 'opponent': game_data['opponent'],
-                'best_book': best_book,
+                'best_sportsbook': best_sportsbook,
                 'best_odds': best_value,
                 'bet_type': bet_type,
             }
 
             # Add all sportsbook odds to result
-            for book, odds in game_data['odds'].items():
-                result[f'{book}_odds'] = odds
+            for sportsbook, odds in game_data['odds'].items():
+                result[f'{sportsbook}_odds'] = odds
 
             results.append(result)
 
@@ -107,12 +107,12 @@ class OddsComparison:
         for result in results:
             print(f'{result["team"]} vs {result["opponent"]}')
             print(f'  Date: {result["date"]}')
-            print(f'  Best: {result["best_book"]} ({result["best_odds"]})')
+            print(f'  Best: {result["best_sportsbook"]} ({result["best_odds"]})')
 
-            for book, odds in result.items():
-                if book.endswith('_odds'):
-                    book_name = book.replace('_odds', '')
-                    print(f'    {book_name}: {odds}')
+            for field_name, odds in result.items():
+                if field_name.endswith('_odds'):
+                    sportsbook_name = field_name.replace('_odds', '')
+                    print(f'    {sportsbook_name}: {odds}')
             print()
 
     def export_to_csv(self, filename='data/odds_comparison_results.csv'):
@@ -121,7 +121,7 @@ class OddsComparison:
             print('No comparison results. Run find_best_odds() first.')
             return
 
-        df = pd.DataFrame(self.comparison_results)
-        df.to_csv(filename, index=False)
+        comparison_table = pd.DataFrame(self.comparison_results)
+        comparison_table.to_csv(filename, index=False)
         print(f'[OK] Comparison exported to {filename}')
-        print(f'  Total games: {len(df)}')
+        print(f'  Total games: {len(comparison_table)}')

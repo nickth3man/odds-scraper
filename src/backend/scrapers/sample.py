@@ -77,7 +77,7 @@ class OddsScraper:
         print('Scraping DraftKings odds...')
 
         # Sample DraftKings odds (slightly different lines)
-        dk_odds = [
+        draftkings_odds = [
             {
                 'game_id': 1,
                 'date': '2026-04-30',
@@ -120,7 +120,7 @@ class OddsScraper:
             },
         ]
 
-        return dk_odds
+        return draftkings_odds
 
     def scrape_fanduel_odds(self):
         """Scrape NBA odds from FanDuel"""
@@ -194,8 +194,8 @@ class OddsScraper:
             print('No odds to export. Run get_all_odds() first.')
             return
 
-        df = pd.DataFrame(self.scraped_odds)
-        df.to_csv(filename, index=False)
+        odds_table = pd.DataFrame(self.scraped_odds)
+        odds_table.to_csv(filename, index=False)
         print(f'[OK] Odds exported to {filename}')
-        print(f'  Total records: {len(df)}')
-        print(f'  Sportsbooks: {df["sportsbook"].unique().tolist()}')
+        print(f'  Total records: {len(odds_table)}')
+        print(f'  Sportsbooks: {odds_table["sportsbook"].unique().tolist()}')

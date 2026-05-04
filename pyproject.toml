@@ -98,7 +98,7 @@ include = ["src/backend", "src/frontend"]
 exclude = []
 
 [[tool.ty.overrides]]
-include = ["src/backend/odds_scraping/live_odds_scraper.py"]
+include = ["src/backend/scrapers/orchestrator.py"]
 
 [tool.ty.overrides.rules]
 possibly-missing-attribute = "ignore"

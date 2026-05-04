@@ -3,7 +3,7 @@
 import tempfile
 from pathlib import Path
 
-from backend.odds_scraping.odds_scraper import OddsScraper
+from backend.scrapers import OddsScraper
 
 _REQUIRED_KEYS = {
     'game_id',
@@ -94,7 +94,7 @@ class TestOddsScraper:
                 assert isinstance(game['over_under'], (int, float))
 
     def test_get_all_odds_respects_config(self):
-        """When all sportsbooks are enabled, 12 games are returned (4 per book)."""
+        """When all sportsbooks are enabled, 12 games are returned (4 per sportsbook)."""
         scraper = OddsScraper()
         odds = scraper.get_all_odds()
         assert len(odds) == 12

@@ -13,9 +13,9 @@ from datetime import datetime
 
 import httpx
 
+from ..shared.http_client import HttpClient
+from ..shared.parsers import GameOdds, format_american_odds, format_event_date, format_line
 from .config import ESPN_API_PARAMS, ESPN_API_URL, ESPN_SCOREBOARD_API_URL
-from .http_client import HttpClient
-from .parsers import GameOdds, format_american_odds, format_event_date, format_line
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +35,9 @@ class EspnOddsScraper:
                 ESPN_API_URL,
                 params=ESPN_API_PARAMS,
             )
-            data = response.json()
+            response_data = response.json()
 
-            sports = data.get('sports') or []
+            sports = response_data.get('sports') or []
             leagues = sports[0].get('leagues', []) if sports else []
             events = leagues[0].get('events', []) if leagues else []
             games = self.parse_header_events(events)
@@ -49,8 +49,8 @@ class EspnOddsScraper:
             print('[WARN] ESPN: No upcoming games found\n')
             return []
 
-        except (httpx.HTTPError, KeyError, IndexError, ValueError) as e:
-            print(f'[WARN] ESPN header API failed: {e}')
+        except (httpx.HTTPError, KeyError, IndexError, ValueError) as error:
+            print(f'[WARN] ESPN header API failed: {error}')
             return self.scrape_scoreboard_fallback()
 
     def parse_header_events(self, events: list) -> list[GameOdds]:
@@ -67,21 +67,39 @@ class EspnOddsScraper:
                 if len(competitors) < 2:
                     continue
 
-                home = next((c for c in competitors if c.get('homeAway') == 'home'), None)
-                away = next((c for c in competitors if c.get('homeAway') == 'away'), None)
-                if not home or not away:
+                home_competitor = next(
+                    (
+                        competitor
+                        for competitor in competitors
+                        if competitor.get('homeAway') == 'home'
+                    ),
+                    None,
+                )
+                away_competitor = next(
+                    (
+                        competitor
+                        for competitor in competitors
+                        if competitor.get('homeAway') == 'away'
+                    ),
+                    None,
+                )
+                if not home_competitor or not away_competitor:
                     continue
 
-                home_team = home.get('displayName', 'Unknown')
-                away_team = away.get('displayName', 'Unknown')
+                home_team = home_competitor.get('displayName', 'Unknown')
+                away_team = away_competitor.get('displayName', 'Unknown')
                 spread = 'N/A'
-                home_spread = odds.get('spread')
-                if home_spread is not None:
+                raw_home_spread = odds.get('spread')
+                if raw_home_spread is not None:
                     with contextlib.suppress(ValueError):
-                        spread_val = -float(home_spread)
-                        spread = f'+{spread_val}' if spread_val > 0 else str(spread_val)
+                        away_spread_value = -float(raw_home_spread)
+                        spread = (
+                            f'+{away_spread_value}'
+                            if away_spread_value > 0
+                            else str(away_spread_value)
+                        )
 
-                ou = str(odds['overUnder']) if odds.get('overUnder') is not None else 'N/A'
+                over_under = str(odds['overUnder']) if odds.get('overUnder') is not None else 'N/A'
 
                 away_team_odds = odds.get('awayTeamOdds', {})
                 home_team_odds = odds.get('homeTeamOdds', {})
@@ -97,13 +115,13 @@ class EspnOddsScraper:
                         'spread': spread,
                         'moneyline': away_moneyline,
                         'home_moneyline': home_moneyline,
-                        'over_under': ou,
+                        'over_under': over_under,
                         'source': 'ESPN',
                     }
                 )
 
-            except (KeyError, IndexError, ValueError, AttributeError, TypeError) as e:
-                logger.warning('Failed to parse ESPN event: %s', e)
+            except (KeyError, IndexError, ValueError, AttributeError, TypeError) as error:
+                logger.warning('Failed to parse ESPN event: %s', error)
                 continue
 
         return games
@@ -116,8 +134,8 @@ class EspnOddsScraper:
                 params={'dates': datetime.now().strftime('%Y%m%d'), 'limit': 100},
             )
             games = self.parse_scoreboard_events(response.json().get('events', []))
-        except (httpx.HTTPError, ValueError, AttributeError) as e:
-            print(f'[ERROR] ESPN Error: {e}\n')
+        except (httpx.HTTPError, ValueError, AttributeError) as error:
+            print(f'[ERROR] ESPN Error: {error}\n')
             return []
 
         if games:
@@ -134,17 +152,31 @@ class EspnOddsScraper:
             try:
                 competition = (event.get('competitions') or [{}])[0]
                 competitors = competition.get('competitors', [])
-                home = next((c for c in competitors if c.get('homeAway') == 'home'), None)
-                away = next((c for c in competitors if c.get('homeAway') == 'away'), None)
-                if not home or not away:
+                home_competitor = next(
+                    (
+                        competitor
+                        for competitor in competitors
+                        if competitor.get('homeAway') == 'home'
+                    ),
+                    None,
+                )
+                away_competitor = next(
+                    (
+                        competitor
+                        for competitor in competitors
+                        if competitor.get('homeAway') == 'away'
+                    ),
+                    None,
+                )
+                if not home_competitor or not away_competitor:
                     continue
 
                 odds = self.select_scoreboard_odds(competition.get('odds', []))
                 if not odds:
                     continue
 
-                home_team = home.get('team', {}).get('displayName', 'Unknown')
-                away_team = away.get('team', {}).get('displayName', 'Unknown')
+                home_team = home_competitor.get('team', {}).get('displayName', 'Unknown')
+                away_team = away_competitor.get('team', {}).get('displayName', 'Unknown')
                 home_moneyline = odds.get('moneyline', {}).get('home', {}).get('close', {})
                 away_moneyline = odds.get('moneyline', {}).get('away', {}).get('close', {})
                 away_spread = odds.get('pointSpread', {}).get('away', {}).get('close', {})
@@ -163,8 +195,8 @@ class EspnOddsScraper:
                         'source': 'ESPN',
                     }
                 )
-            except (KeyError, IndexError, ValueError, AttributeError, TypeError) as e:
-                logger.warning('Failed to parse ESPN scoreboard event: %s', e)
+            except (KeyError, IndexError, ValueError, AttributeError, TypeError) as error:
+                logger.warning('Failed to parse ESPN scoreboard event: %s', error)
                 continue
 
         return games

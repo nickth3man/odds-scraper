@@ -3,8 +3,8 @@ from __future__ import annotations
 from nicegui import APIRouter, run, ui
 
 from backend.models.odds_enrichment import merge_source_rows, recompute_ev
-from backend.odds_scraping.espn_scraper import EspnOddsScraper
-from backend.odds_scraping.live_odds_scraper import LiveOddsScraper
+from backend.scrapers import LiveOddsScraper
+from backend.scrapers.espn import EspnOddsScraper
 
 router = APIRouter()
 
@@ -41,8 +41,8 @@ def live_odds() -> None:
             ui.label('Live Odds').classes('text-2xl font-bold')
 
         with ui.row().classes('gap-3 items-center'):
-            espn_btn = ui.button('Scrape ESPN', icon='refresh')
-            dk_btn = ui.button('Scrape DraftKings', icon='refresh').props('outline')
+            espn_button = ui.button('Scrape ESPN', icon='refresh')
+            draftkings_button = ui.button('Scrape DraftKings', icon='refresh').props('outline')
             model_probability = ui.number(
                 'Model win probability (%)', value=55.0, min=1, max=99, step=0.5
             ).classes('w-56')
@@ -66,7 +66,7 @@ def live_odds() -> None:
 
         async def scrape_espn() -> None:
             """Scrape ESPN odds and merge them into the live table."""
-            espn_btn.disable()
+            espn_button.disable()
             status.text = 'Fetching ESPN odds...'
             try:
                 scraper = EspnOddsScraper()
@@ -77,15 +77,15 @@ def live_odds() -> None:
             except Exception:
                 status.text = 'Error fetching ESPN odds.'
             finally:
-                espn_btn.enable()
+                espn_button.enable()
 
-        async def scrape_dk() -> None:
+        async def scrape_draftkings() -> None:
             """Scrape DraftKings odds and merge them into the live table."""
-            dk_btn.disable()
+            draftkings_button.disable()
             status.text = 'Fetching DraftKings odds (Playwright)...'
             try:
-                live = LiveOddsScraper()
-                games = await run.io_bound(live.scrape_draftkings_odds)
+                scraper = LiveOddsScraper()
+                games = await run.io_bound(scraper.scrape_draftkings_odds)
                 rows = merge_source_rows(
                     table.rows, games, 'DraftKings', current_model_probability()
                 )
@@ -94,7 +94,7 @@ def live_odds() -> None:
             except Exception:
                 status.text = 'Error fetching DraftKings odds.'
             finally:
-                dk_btn.enable()
+                draftkings_button.enable()
 
         model_probability.on_value_change(
             lambda _e: (
@@ -104,5 +104,5 @@ def live_odds() -> None:
             )
         )
 
-        espn_btn.on_click(scrape_espn)
-        dk_btn.on_click(scrape_dk)
+        espn_button.on_click(scrape_espn)
+        draftkings_button.on_click(scrape_draftkings)

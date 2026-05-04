@@ -1,9 +1,9 @@
 import json
 from pathlib import Path
 
-from backend.odds_scraping.draftkings_scraper import DraftKingsScraper
-from backend.odds_scraping.espn_scraper import EspnOddsScraper
-from backend.odds_scraping.live_odds_scraper import LiveOddsScraper
+from backend.scrapers import LiveOddsScraper
+from backend.scrapers.draftkings import DraftKingsScraper
+from backend.scrapers.espn import EspnOddsScraper
 from tests.browser_fakes import FakeElement, FakePage
 
 
@@ -38,7 +38,7 @@ def test_get_all_games_resets_previous_results(monkeypatch):
     }
 
     def scrape_espn(self):
-        self.all_games.extend([game])
+        self.games.extend([game])
         return [game]
 
     def scrape_no_draftkings_games(self):
@@ -62,10 +62,10 @@ def test_scrape_draftkings_odds_appends_games(monkeypatch):
     def return_games():
         return games
 
-    monkeypatch.setattr(scraper._dk, 'scrape_odds', return_games)
+    monkeypatch.setattr(scraper._draftkings, 'scrape_odds', return_games)
 
     assert scraper.scrape_draftkings_odds() == games
-    assert scraper.all_games == games
+    assert scraper.games == games
 
 
 def test_scrape_draftkings_odds_skips_empty_results(monkeypatch):
@@ -74,10 +74,10 @@ def test_scrape_draftkings_odds_skips_empty_results(monkeypatch):
     def return_no_games():
         return []
 
-    monkeypatch.setattr(scraper._dk, 'scrape_odds', return_no_games)
+    monkeypatch.setattr(scraper._draftkings, 'scrape_odds', return_no_games)
 
     assert scraper.scrape_draftkings_odds() == []
-    assert scraper.all_games == []
+    assert scraper.games == []
 
 
 def test_parse_draftkings_html_delegates_to_scraper(monkeypatch):
@@ -457,61 +457,65 @@ def test_parse_scoreboard_events_skips_invalid_entries_and_logs_warning(caplog):
 
 def test_parse_draftkings_cb_market_structure():
     """Test parsing DraftKings cb-market template (component-builder layout)."""
-    away_spread_btn = FakeElement(
+    away_spread_button = FakeElement(
         text='+7.5',
         attrs={'data-testid': 'component-builder-market-button-34077039-0HC84578437P750_1'},
     )
-    away_spread_btn._children = [
+    away_spread_button._children = [
         FakeElement(text='+7.5', attrs={'data-testid': 'button-points-market-board'}),
         FakeElement(text='-102', attrs={'data-testid': 'button-odds-market-board'}),
     ]
 
-    home_spread_btn = FakeElement(
+    home_spread_button = FakeElement(
         text='-7.5',
         attrs={'data-testid': 'component-builder-market-button-34077039-0HC84578437N750_3'},
     )
-    home_spread_btn._children = [
+    home_spread_button._children = [
         FakeElement(text='-7.5', attrs={'data-testid': 'button-points-market-board'}),
         FakeElement(text='-118', attrs={'data-testid': 'button-odds-market-board'}),
     ]
 
-    over_btn = FakeElement(
+    over_button = FakeElement(
         text='O 205.5',
         attrs={'data-testid': 'component-builder-market-button-34077039-0OU84578437O20550_1'},
     )
-    over_btn._children = [
+    over_button._children = [
         FakeElement(text='O', attrs={'data-testid': 'button-title-market-board'}),
         FakeElement(text='205.5', attrs={'data-testid': 'button-points-market-board'}),
         FakeElement(text='-110', attrs={'data-testid': 'button-odds-market-board'}),
     ]
 
-    away_ml_btn = FakeElement(
+    away_moneyline_button = FakeElement(
         text='+215', attrs={'data-testid': 'component-builder-market-button-34077039-0ML84578437_1'}
     )
-    away_ml_btn._children = [
+    away_moneyline_button._children = [
         FakeElement(text='+215', attrs={'data-testid': 'button-odds-market-board'}),
     ]
 
-    home_ml_btn = FakeElement(
+    home_moneyline_button = FakeElement(
         text='-265', attrs={'data-testid': 'component-builder-market-button-34077039-0ML84578437_3'}
     )
-    home_ml_btn._children = [
+    home_moneyline_button._children = [
         FakeElement(text='-265', attrs={'data-testid': 'button-odds-market-board'}),
     ]
 
-    away_team = FakeElement(text='PHI 76ers', attrs={'class': 'cb-market__label-inner--parlay'})
-    home_team = FakeElement(text='BOS Celtics', attrs={'class': 'cb-market__label-inner--parlay'})
+    away_team_element = FakeElement(
+        text='PHI 76ers', attrs={'class': 'cb-market__label-inner--parlay'}
+    )
+    home_team_element = FakeElement(
+        text='BOS Celtics', attrs={'class': 'cb-market__label-inner--parlay'}
+    )
 
     game_template = FakeElement(
         attrs={'class': 'cb-market__template--2-columns'},
         children=[
-            away_team,
-            home_team,
-            away_spread_btn,
-            home_spread_btn,
-            over_btn,
-            away_ml_btn,
-            home_ml_btn,
+            away_team_element,
+            home_team_element,
+            away_spread_button,
+            home_spread_button,
+            over_button,
+            away_moneyline_button,
+            home_moneyline_button,
         ],
     )
 
@@ -532,24 +536,33 @@ def test_parse_draftkings_cb_market_structure():
 
 def test_parse_draftkings_games_prefers_cb_market():
     """Test parse_games tries cb-market first, then falls back."""
-    away_team = FakeElement(text='PHI 76ers', attrs={'class': 'cb-market__label-inner--parlay'})
-    home_team = FakeElement(text='BOS Celtics', attrs={'class': 'cb-market__label-inner--parlay'})
-    away_ml_btn = FakeElement(
+    away_team_element = FakeElement(
+        text='PHI 76ers', attrs={'class': 'cb-market__label-inner--parlay'}
+    )
+    home_team_element = FakeElement(
+        text='BOS Celtics', attrs={'class': 'cb-market__label-inner--parlay'}
+    )
+    away_moneyline_button = FakeElement(
         text='+215', attrs={'data-testid': 'component-builder-market-button-0ML_1'}
     )
-    away_ml_btn._children = [
+    away_moneyline_button._children = [
         FakeElement(text='+215', attrs={'data-testid': 'button-odds-market-board'}),
     ]
-    home_ml_btn = FakeElement(
+    home_moneyline_button = FakeElement(
         text='-265', attrs={'data-testid': 'component-builder-market-button-0ML_3'}
     )
-    home_ml_btn._children = [
+    home_moneyline_button._children = [
         FakeElement(text='-265', attrs={'data-testid': 'button-odds-market-board'}),
     ]
 
     game_template = FakeElement(
         attrs={'class': 'cb-market__template--2-columns'},
-        children=[away_team, home_team, away_ml_btn, home_ml_btn],
+        children=[
+            away_team_element,
+            home_team_element,
+            away_moneyline_button,
+            home_moneyline_button,
+        ],
     )
 
     page = FakePage(elements=[game_template])
@@ -562,10 +575,12 @@ def test_parse_draftkings_games_prefers_cb_market():
 
 def test_parse_draftkings_cb_market_skips_incomplete_games():
     """Games with fewer than 2 teams are skipped."""
-    away_team = FakeElement(text='PHI 76ers', attrs={'class': 'cb-market__label-inner--parlay'})
+    away_team_element = FakeElement(
+        text='PHI 76ers', attrs={'class': 'cb-market__label-inner--parlay'}
+    )
     game_template = FakeElement(
         attrs={'class': 'cb-market__template--2-columns'},
-        children=[away_team],
+        children=[away_team_element],
     )
 
     page = FakePage(elements=[game_template])
@@ -575,30 +590,38 @@ def test_parse_draftkings_cb_market_skips_incomplete_games():
 
 def test_parse_draftkings_cb_market_multiple_games():
     """Parse multiple games from cb-market templates."""
-    away_team1 = FakeElement(text='PHI 76ers', attrs={'class': 'cb-market__label-inner--parlay'})
-    home_team1 = FakeElement(text='BOS Celtics', attrs={'class': 'cb-market__label-inner--parlay'})
-    away_ml1 = FakeElement(
+    away_team_element_1 = FakeElement(
+        text='PHI 76ers', attrs={'class': 'cb-market__label-inner--parlay'}
+    )
+    home_team_element_1 = FakeElement(
+        text='BOS Celtics', attrs={'class': 'cb-market__label-inner--parlay'}
+    )
+    away_moneyline_button_1 = FakeElement(
         text='+215', attrs={'data-testid': 'component-builder-market-button-game1-0ML_1'}
     )
-    away_ml1._children = [
+    away_moneyline_button_1._children = [
         FakeElement(text='+215', attrs={'data-testid': 'button-odds-market-board'}),
     ]
     template1 = FakeElement(
         attrs={'class': 'cb-market__template--2-columns'},
-        children=[away_team1, home_team1, away_ml1],
+        children=[away_team_element_1, home_team_element_1, away_moneyline_button_1],
     )
 
-    away_team2 = FakeElement(text='ORL Magic', attrs={'class': 'cb-market__label-inner--parlay'})
-    home_team2 = FakeElement(text='DET Pistons', attrs={'class': 'cb-market__label-inner--parlay'})
-    away_ml2 = FakeElement(
+    away_team_element_2 = FakeElement(
+        text='ORL Magic', attrs={'class': 'cb-market__label-inner--parlay'}
+    )
+    home_team_element_2 = FakeElement(
+        text='DET Pistons', attrs={'class': 'cb-market__label-inner--parlay'}
+    )
+    away_moneyline_button_2 = FakeElement(
         text='+280', attrs={'data-testid': 'component-builder-market-button-game2-0ML_1'}
     )
-    away_ml2._children = [
+    away_moneyline_button_2._children = [
         FakeElement(text='+280', attrs={'data-testid': 'button-odds-market-board'}),
     ]
     template2 = FakeElement(
         attrs={'class': 'cb-market__template--2-columns'},
-        children=[away_team2, home_team2, away_ml2],
+        children=[away_team_element_2, home_team_element_2, away_moneyline_button_2],
     )
 
     page = FakePage(elements=[template1, template2])
@@ -615,30 +638,38 @@ def test_parse_draftkings_cb_market_multiple_games():
 def test_parse_futures_champion_extracts_team_and_odds():
     """Parse DraftKings futures champion market structure."""
     # Each button has: button-title-market-board (team) + button-odds-market-board (odds)
-    team1 = FakeElement(text='OKC Thunder', attrs={'data-testid': 'button-title-market-board'})
-    odds1 = FakeElement(text='-130', attrs={'data-testid': 'button-odds-market-board'})
-    btn1 = FakeElement(
+    team_element_1 = FakeElement(
+        text='OKC Thunder', attrs={'data-testid': 'button-title-market-board'}
+    )
+    odds_element_1 = FakeElement(text='-130', attrs={'data-testid': 'button-odds-market-board'})
+    button_1 = FakeElement(
         attrs={'class': 'cb-market__button cb-market__button--regular'},
-        children=[team1, odds1],
+        children=[team_element_1, odds_element_1],
     )
 
-    team2 = FakeElement(text='BOS Celtics', attrs={'data-testid': 'button-title-market-board'})
-    odds2 = FakeElement(text='+650', attrs={'data-testid': 'button-odds-market-board'})
-    btn2 = FakeElement(
+    team_element_2 = FakeElement(
+        text='BOS Celtics', attrs={'data-testid': 'button-title-market-board'}
+    )
+    odds_element_2 = FakeElement(text='+650', attrs={'data-testid': 'button-odds-market-board'})
+    button_2 = FakeElement(
         attrs={'class': 'cb-market__button cb-market__button--regular'},
-        children=[team2, odds2],
+        children=[team_element_2, odds_element_2],
     )
 
-    team3 = FakeElement(text='NY Knicks', attrs={'data-testid': 'button-title-market-board'})
-    odds3 = FakeElement(text='  +1800  ', attrs={'data-testid': 'button-odds-market-board'})
-    btn3 = FakeElement(
+    team_element_3 = FakeElement(
+        text='NY Knicks', attrs={'data-testid': 'button-title-market-board'}
+    )
+    odds_element_3 = FakeElement(
+        text='  +1800  ', attrs={'data-testid': 'button-odds-market-board'}
+    )
+    button_3 = FakeElement(
         attrs={'class': 'cb-market__button cb-market__button--regular'},
-        children=[team3, odds3],
+        children=[team_element_3, odds_element_3],
     )
 
     template = FakeElement(
         attrs={'class': 'cb-market__template--2-columns'},
-        children=[btn1, btn2, btn3],
+        children=[button_1, button_2, button_3],
     )
 
     page = FakePage(elements=[template])
@@ -666,29 +697,29 @@ def test_parse_futures_champion_empty_when_no_button_elements():
 
 def test_parse_futures_category_extracts_accordion_team_rows():
     """Parse the sportsbook-accordion hierarchy used by DraftKings futures pages."""
-    team1 = FakeElement(
+    team_element_1 = FakeElement(
         text='OKC Thunder',
         attrs={'tag': 'a'},
     )
-    odds1 = FakeElement(
+    odds_element_1 = FakeElement(
         text='OKC Thunder -130',
         attrs={'tag': 'button'},
     )
     row1 = FakeElement(
         attrs={'class': 'content-sports-hierarchy-teams__team'},
-        children=[team1, odds1],
+        children=[team_element_1, odds_element_1],
     )
-    team2 = FakeElement(
+    team_element_2 = FakeElement(
         text='BOS Celtics',
         attrs={'tag': 'a'},
     )
-    odds2 = FakeElement(
+    odds_element_2 = FakeElement(
         text='BOS Celtics +650',
         attrs={'tag': 'button'},
     )
     row2 = FakeElement(
         attrs={'class': 'content-sports-hierarchy-teams__team'},
-        children=[team2, odds2],
+        children=[team_element_2, odds_element_2],
     )
     wrapper = FakeElement(
         attrs={'class': 'sportsbook-accordion__wrapper'},
@@ -715,15 +746,17 @@ def test_parse_futures_category_extracts_accordion_team_rows():
 
 def test_parse_futures_category_passes_bet_type():
     """Verify bet_type parameter is set in each output dict."""
-    team = FakeElement(text='LAL Lakers', attrs={'data-testid': 'button-title-market-board'})
-    odds = FakeElement(text='+1200', attrs={'data-testid': 'button-odds-market-board'})
-    btn = FakeElement(
+    team_element = FakeElement(
+        text='LAL Lakers', attrs={'data-testid': 'button-title-market-board'}
+    )
+    odds_element = FakeElement(text='+1200', attrs={'data-testid': 'button-odds-market-board'})
+    button = FakeElement(
         attrs={'class': 'cb-market__button cb-market__button--regular'},
-        children=[team, odds],
+        children=[team_element, odds_element],
     )
     template = FakeElement(
         attrs={'class': 'cb-market__template--2-columns'},
-        children=[btn],
+        children=[button],
     )
     page = FakePage(elements=[template])
     results = DraftKingsScraper().parse_futures_category(page, 'playoffs')

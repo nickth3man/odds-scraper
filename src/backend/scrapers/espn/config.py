@@ -1,4 +1,4 @@
-"""Source-specific URLs and request parameters for odds adapters."""
+"""Source-specific URLs and request parameters for the ESPN odds adapter."""
 
 from __future__ import annotations
 
@@ -14,6 +14,3 @@ ESPN_API_PARAMS: dict[str, str] = {
     'showAirings': 'buy,live,replay',
     'tz': 'America/New_York',
 }
-
-DK_BASE_URL = 'https://sportsbook.draftkings.com/leagues/basketball/nba'
-DK_FUTURES_CHAMPION_URL = DK_BASE_URL + '?category=futures&subcategory=champion'

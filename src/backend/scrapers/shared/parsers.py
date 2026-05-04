@@ -25,17 +25,17 @@ class GameOdds(TypedDict):
 logger = logging.getLogger(__name__)
 
 
-def first_signed_number(text: str) -> str | None:
+def extract_first_signed_number(text: str) -> str | None:
     match = re.search(r'(?<!\d)([+-]?\d+(?:\.\d+)?)(?!\d)', text)
     return match.group(1) if match else None
 
 
-def first_american_odds(text: str) -> str | None:
+def extract_first_american_odds(text: str) -> str | None:
     match = re.search(r'(?<!\d)([+-]\d{3,})(?!\d)', text)
     return match.group(1) if match else None
 
 
-def first_total(text: str) -> str | None:
+def extract_first_total(text: str) -> str | None:
     match = re.search(r'\b(?:over|under|o|u)\s*([0-9]+(?:\.[0-9]+)?)\b', text, re.IGNORECASE)
     if match:
         return match.group(1)

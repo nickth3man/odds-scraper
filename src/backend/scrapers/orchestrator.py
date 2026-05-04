@@ -2,10 +2,10 @@ import logging
 
 import pandas as pd
 
-from .draftkings_scraper import DraftKingsScraper
-from .espn_scraper import EspnOddsScraper
-from .http_client import HttpClient
-from .parsers import GameOdds
+from .draftkings.scraper import DraftKingsScraper
+from .espn.scraper import EspnOddsScraper
+from .shared.http_client import HttpClient
+from .shared.parsers import GameOdds
 
 logger = logging.getLogger(__name__)
 
@@ -16,24 +16,24 @@ class LiveOddsScraper:
     def __init__(self, http: HttpClient | None = None):
         self._http = http or HttpClient()
         self._espn = EspnOddsScraper(self._http)
-        self._dk = DraftKingsScraper()
-        self.all_games = []
+        self._draftkings = DraftKingsScraper()
+        self.games = []
 
     # ============ ESPN SCRAPING (JSON API) ============
 
     def scrape_espn_nba_odds(self):
         """Scrape live NBA odds from ESPN's JSON API."""
         games = self._espn.scrape_nba_odds()
-        self.all_games.extend(games)
+        self.games.extend(games)
         return games
 
     # ============ DRAFTKINGS SCRAPING (Playwright) ============
 
     def scrape_draftkings_odds(self):
         """Scrape live odds from DraftKings using Playwright."""
-        games = self._dk.scrape_odds()
+        games = self._draftkings.scrape_odds()
         if games:
-            self.all_games.extend(games)
+            self.games.extend(games)
         return games
 
     @staticmethod
@@ -53,37 +53,37 @@ class LiveOddsScraper:
             print('No games to export')
             return None
 
-        df = pd.DataFrame(games)
-        df.to_csv(filename, index=False)
+        games_table = pd.DataFrame(games)
+        games_table.to_csv(filename, index=False)
         print(f'[OK] Live odds exported to {filename}')
-        print(f'   Total games: {len(df)}\n')
+        print(f'   Total games: {len(games_table)}\n')
 
-        return df
+        return games_table
 
     def display_games(self, games, source=''):
         """Display games in a formatted table."""
         if not games:
             return
 
-        df = pd.DataFrame(games)
+        games_table = pd.DataFrame(games)
 
         print('=' * 100)
         print(f'LIVE {source} GAMES')
         print('=' * 100)
-        print(df.to_string(index=False))
+        print(games_table.to_string(index=False))
         print()
 
     def get_all_games(self):
         """Scrape both ESPN and DraftKings."""
         print('NBA Live odds from all sources\n')
-        self.all_games = []
+        self.games = []
 
         espn_games = self.scrape_espn_nba_odds()
         if espn_games:
             self.display_games(espn_games, 'ESPN')
 
-        dk_games = self.scrape_draftkings_odds()
-        if dk_games:
-            self.display_games(dk_games, 'DRAFTKINGS')
+        draftkings_games = self.scrape_draftkings_odds()
+        if draftkings_games:
+            self.display_games(draftkings_games, 'DRAFTKINGS')
 
-        return self.all_games
+        return self.games

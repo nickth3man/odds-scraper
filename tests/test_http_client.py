@@ -1,7 +1,7 @@
 import types
 from typing import cast
 
-from backend.odds_scraping import http_client
+from backend.scrapers.shared import http_client
 
 
 class _FakeUserAgentProvider:
@@ -32,7 +32,7 @@ def test_build_user_agent_provider_falls_back_when_dependency_is_missing(monkeyp
 
 
 def test_build_headers_uses_current_user_agent(monkeypatch):
-    monkeypatch.setattr(http_client, '_ua_generator', _FakeUserAgentProvider())
+    monkeypatch.setattr(http_client, '_user_agent_provider', _FakeUserAgentProvider())
 
     headers = http_client.HttpClient._build_headers()
 

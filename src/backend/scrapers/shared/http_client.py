@@ -64,7 +64,7 @@ def _build_user_agent_provider():
     return user_agent_factory()
 
 
-_ua_generator = _build_user_agent_provider()
+_user_agent_provider = _build_user_agent_provider()
 
 # Exceptions we consider transient and worth retrying
 _TRANSIENT_EXCEPTIONS = (
@@ -129,7 +129,7 @@ class HttpClient:
         merged_headers = {**self._build_headers(), **(headers or {})}
 
         # Build a retry decorator that retries on transient failures
-        _retryer = retry(
+        retry_request = retry(
             retry=retry_if_exception_type(_TRANSIENT_EXCEPTIONS),
             stop=stop_after_attempt(self._max_retries),
             wait=wait_exponential(multiplier=1, min=1, max=10),
@@ -137,14 +137,14 @@ class HttpClient:
             before_sleep=self._log_retry_attempt,
         )
 
-        @_retryer
-        def _do_request() -> httpx.Response:
+        @retry_request
+        def get_response() -> httpx.Response:
             response = self._client.get(url, params=params, headers=merged_headers)
             response.raise_for_status()
             return response
 
         self._domain_timestamps[domain] = time.monotonic()
-        return _do_request()
+        return get_response()
 
     def get_json(
         self,
@@ -167,7 +167,7 @@ class HttpClient:
             merged_headers = {**self._build_headers(), **(headers or {})}
             curl_get = _curl_get
 
-            _retryer = retry(
+            retry_request = retry(
                 retry=retry_if_exception_type(_CURL_TRANSIENT_EXCEPTIONS),
                 stop=stop_after_attempt(self._max_retries),
                 wait=wait_exponential(multiplier=1, min=1, max=10),
@@ -175,21 +175,21 @@ class HttpClient:
                 before_sleep=self._log_retry_attempt,
             )
 
-            @_retryer
-            def _do_curl_request() -> CurlResponse:
-                resp = curl_get(
+            @retry_request
+            def get_curl_response() -> CurlResponse:
+                curl_response = curl_get(
                     url,
                     params=params,
                     headers=merged_headers,
                     impersonate=impersonate,
                     timeout=self._default_timeout,
                 )
-                resp.raise_for_status()
-                return resp
+                curl_response.raise_for_status()
+                return curl_response
 
-            resp = _do_curl_request()
+            curl_response = get_curl_response()
             self._domain_timestamps[domain] = time.monotonic()
-            return _json.loads(resp.content)
+            return _json.loads(curl_response.content)
 
         response = self.get(url, params=params, headers=headers)
         return _json.loads(response.content)
@@ -205,7 +205,7 @@ class HttpClient:
     @staticmethod
     def _build_headers() -> dict[str, str]:
         return {
-            'User-Agent': _ua_generator.random,
+            'User-Agent': _user_agent_provider.random,
             'Accept': 'application/json, text/plain, */*',
             'Accept-Language': 'en-US,en;q=0.9',
         }
@@ -231,11 +231,11 @@ class HttpClient:
     def _log_retry_attempt(retry_state) -> None:
         """Callback invoked by tenacity before each retry sleep."""
         attempt = retry_state.attempt_number
-        exc = retry_state.outcome.exception() if retry_state.outcome else None
+        exception = retry_state.outcome.exception() if retry_state.outcome else None
         logger.warning(
             'HTTP retry %d/%d — %s: %s',
             attempt,
             retry_state.retry_object.stop.max_attempt_number,  # type: ignore[union-attr]
-            type(exc).__name__ if exc else 'unknown',
-            exc,
+            type(exception).__name__ if exception else 'unknown',
+            exception,
         )
