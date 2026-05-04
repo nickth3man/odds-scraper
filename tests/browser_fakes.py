@@ -11,7 +11,7 @@ import re
 class FakeElement:
     """Unified mock for a Playwright ElementHandle.
 
-    Supports child lookup by data-testid (CSS selector) and parent traversal (XPath).
+    Supports targeted child lookup for the CSS/XPath selector subset used by parser tests.
     """
 
     def __init__(self, text='', attrs=None, parent=None, children=None):
@@ -38,14 +38,10 @@ class FakeElement:
                 return self._parent
             raise RuntimeError('no parent element')
 
-        # CSS selector: look up a child by data-testid attribute
-        match = re.search(r"data-testid='([^']+)'", selector)
-        if match:
-            found = self._find_child_by_testid(match.group(1))
-            if found:
-                return found
-
-        return self._children[0] if self._children else None
+        for child in self._walk_children():
+            if child._matches_selector(selector):
+                return child
+        return None
 
     def _find_child_by_testid(self, testid: str):
         for child in self._children:
@@ -57,8 +53,46 @@ class FakeElement:
         return None
 
     def query_selector_all(self, selector: str):
-        """Simulate Playwright query_selector_all returning children list."""
-        return self._children
+        """Simulate Playwright query_selector_all with basic selector filtering."""
+        return [child for child in self._walk_children() if child._matches_selector(selector)]
+
+    def _walk_children(self):
+        for child in self._children:
+            yield child
+            yield from child._walk_children()
+
+    def _matches_selector(self, selector: str) -> bool:
+        selector_options = [part.strip() for part in selector.split(',')]
+        return any(self._matches_simple_selector(option) for option in selector_options if option)
+
+    def _matches_simple_selector(self, selector: str) -> bool:
+        if not selector:
+            return False
+
+        selector = selector.split()[-1]
+        tag = self._attrs.get('tag')
+        if selector in {'a', 'button'}:
+            return tag == selector or selector in (self._attrs.get('class') or '')
+
+        data_testid = self._attrs.get('data-testid') or ''
+        exact_testid = re.search(r"data-testid=['\"]([^'\"]+)['\"]", selector)
+        if exact_testid and data_testid != exact_testid.group(1):
+            return False
+        partial_testid = re.search(r"data-testid\*=['\"]([^'\"]+)['\"]", selector)
+        if partial_testid and partial_testid.group(1) not in data_testid:
+            return False
+
+        class_name = self._attrs.get('class') or ''
+        partial_classes = re.findall(r"class\*=['\"]([^'\"]+)['\"]", selector)
+        if partial_classes and not any(fragment in class_name for fragment in partial_classes):
+            return False
+
+        aria_label = self._attrs.get('aria-label') or ''
+        partial_aria = re.search(r"aria-label\*=['\"]([^'\"]+)['\"]", selector)
+        if partial_aria and partial_aria.group(1) not in aria_label:
+            return False
+
+        return bool(exact_testid or partial_testid or partial_classes or partial_aria)
 
 
 class FakePage:
@@ -75,4 +109,4 @@ class FakePage:
         return 'DraftKings Test'
 
     def query_selector_all(self, selector: str):
-        return self._elements
+        return [element for element in self._elements if element._matches_selector(selector)]

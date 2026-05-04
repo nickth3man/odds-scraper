@@ -11,6 +11,9 @@ class _JsonResponse:
     def __init__(self, payload: dict):
         self._payload = payload
 
+    def raise_for_status(self) -> None:
+        return None
+
     def json(self) -> dict:
         return self._payload
 
@@ -130,21 +133,34 @@ def test_parse_draftkings_games_extracts_spread_moneyline_and_total():
     outcome_cells = [
         FakeElement(
             text='OKC Thunder -2.5\n-110',
-            attrs={'aria-label': 'OKC Thunder Spread -2.5 -110'},
+            attrs={
+                'aria-label': 'OKC Thunder Spread -2.5 -110',
+                'class': 'sportsbook-outcome-cell__body',
+            },
         ),
         FakeElement(
             text='OKC Thunder\n-135',
-            attrs={'aria-label': 'OKC Thunder Moneyline -135'},
+            attrs={
+                'aria-label': 'OKC Thunder Moneyline -135',
+                'class': 'sportsbook-outcome-cell__body',
+            },
         ),
         FakeElement(
             text='Over 223.5\n-110',
-            attrs={'aria-label': 'Over 223.5 Total Points -110'},
+            attrs={
+                'aria-label': 'Over 223.5 Total Points -110',
+                'class': 'sportsbook-outcome-cell__body',
+            },
         ),
     ]
     game_block = FakeElement(children=outcome_cells)
     team_elements = [
-        FakeElement(text='OKC Thunder', parent=game_block),
-        FakeElement(text='Boston Celtics', parent=game_block),
+        FakeElement(
+            text='OKC Thunder', attrs={'class': 'event-cell__name-text'}, parent=game_block
+        ),
+        FakeElement(
+            text='Boston Celtics', attrs={'class': 'event-cell__name-text'}, parent=game_block
+        ),
     ]
     page = FakePage(elements=team_elements)
 
@@ -646,6 +662,55 @@ def test_parse_futures_champion_empty_when_no_button_elements():
     page = FakePage(elements=[])
     results = DraftKingsScraper().parse_futures_champion(page)
     assert results == []
+
+
+def test_parse_futures_category_extracts_accordion_team_rows():
+    """Parse the sportsbook-accordion hierarchy used by DraftKings futures pages."""
+    team1 = FakeElement(
+        text='OKC Thunder',
+        attrs={'tag': 'a'},
+    )
+    odds1 = FakeElement(
+        text='OKC Thunder -130',
+        attrs={'tag': 'button'},
+    )
+    row1 = FakeElement(
+        attrs={'class': 'content-sports-hierarchy-teams__team'},
+        children=[team1, odds1],
+    )
+    team2 = FakeElement(
+        text='BOS Celtics',
+        attrs={'tag': 'a'},
+    )
+    odds2 = FakeElement(
+        text='BOS Celtics +650',
+        attrs={'tag': 'button'},
+    )
+    row2 = FakeElement(
+        attrs={'class': 'content-sports-hierarchy-teams__team'},
+        children=[team2, odds2],
+    )
+    wrapper = FakeElement(
+        attrs={'class': 'sportsbook-accordion__wrapper'},
+        children=[row1, row2],
+    )
+
+    results = DraftKingsScraper().parse_futures_category(FakePage(elements=[wrapper]), 'champion')
+
+    assert results == [
+        {
+            'team': 'OKC Thunder',
+            'odds': '-130',
+            'bet_type': 'champion',
+            'source': 'DraftKings',
+        },
+        {
+            'team': 'BOS Celtics',
+            'odds': '+650',
+            'bet_type': 'champion',
+            'source': 'DraftKings',
+        },
+    ]
 
 
 def test_parse_futures_category_passes_bet_type():

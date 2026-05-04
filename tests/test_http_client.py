@@ -75,7 +75,7 @@ def test_get_merges_headers_and_tracks_domain(monkeypatch):
     headers = cast(dict[str, str], seen['headers'])
     assert headers['X-Test'] == '1'
     assert headers['User-Agent']
-    assert 'espn.com' in client._domain_timestamps
+    assert set(client._domain_timestamps) == {'espn.com'}
 
 
 def test_get_json_uses_curl_when_impersonation_is_enabled(monkeypatch):
@@ -115,7 +115,7 @@ def test_get_json_uses_curl_when_impersonation_is_enabled(monkeypatch):
     assert headers['X-Test'] == '1'
     assert seen['impersonate'] == 'chrome'
     assert seen['timeout'] == client._default_timeout
-    assert 'draftkings.com' in client._domain_timestamps
+    assert set(client._domain_timestamps) == {'draftkings.com'}
 
 
 def test_get_json_falls_back_to_httpx_get(monkeypatch):

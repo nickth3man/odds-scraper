@@ -189,6 +189,7 @@ from __future__ import annotations
 # ==============================================================================
 import logging
 import re
+from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -201,6 +202,7 @@ from .parsers import GameOdds, first_american_odds, first_signed_number, first_t
 
 if TYPE_CHECKING:
     from parsel import Selector as HtmlSelector
+    from playwright.sync_api import Browser, BrowserContext, Page, Playwright
 else:
     HtmlSelector = object
 
@@ -221,35 +223,70 @@ USER_AGENT = (
 )
 
 
+@dataclass(frozen=True)
+class _BrowserSession:
+    pw: Playwright
+    browser: Browser
+    context: BrowserContext
+    page: Page
+
+
+def _close_playwright_resource(resource: Page | BrowserContext | Browser | None) -> None:
+    if resource is None:
+        return
+    resource.close()
+
+
 class DraftKingsScraper:
     """Scrape and parse DraftKings NBA odds."""
 
     @staticmethod
-    def _create_page():
+    def _create_page() -> _BrowserSession:
         """Create a stealth-configured Playwright browser page."""
         pw = sync_playwright().start()
-        browser = pw.chromium.launch(
-            headless=True,
-            args=[
-                '--disable-blink-features=AutomationControlled',
-                '--window-size=1920,1080',
-            ],
-        )
-        context = browser.new_context(
-            viewport={'width': 1920, 'height': 1080},
-            user_agent=USER_AGENT,
-        )
-        context.add_init_script(
-            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-        )
-        page = context.new_page()
-        Stealth().apply_stealth_sync(page)
-        return pw, page
+        browser: Browser | None = None
+        context: BrowserContext | None = None
+        page: Page | None = None
+        try:
+            browser = pw.chromium.launch(
+                headless=True,
+                args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--window-size=1920,1080',
+                ],
+            )
+            context = browser.new_context(
+                viewport={'width': 1920, 'height': 1080},
+                user_agent=USER_AGENT,
+            )
+            context.add_init_script(
+                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+            )
+            page = context.new_page()
+            Stealth().apply_stealth_sync(page)
+            return _BrowserSession(pw=pw, browser=browser, context=context, page=page)
+        except Exception:
+            _close_playwright_resource(page)
+            _close_playwright_resource(context)
+            _close_playwright_resource(browser)
+            pw.stop()
+            raise
 
     @staticmethod
-    def _cleanup(pw):
-        """Clean up Playwright instance."""
-        pw.stop()
+    def _cleanup(session: _BrowserSession | None) -> None:
+        """Clean up Playwright resources from leaf objects back to the driver."""
+        if session is None:
+            return
+        for resource_name, resource in (
+            ('page', session.page),
+            ('context', session.context),
+            ('browser', session.browser),
+        ):
+            try:
+                _close_playwright_resource(resource)
+            except Exception as exc:
+                logger.warning('Failed to close DraftKings Playwright %s: %s', resource_name, exc)
+        session.pw.stop()
 
     def scrape_odds(self) -> list[GameOdds]:
         """Scrape live odds from DraftKings using Playwright.
@@ -260,9 +297,10 @@ class DraftKingsScraper:
         """
         print('[Fetching] Live odds from DraftKings (this takes 10-15 seconds)...\n')
 
-        pw, page = None, None
+        session = None
         try:
-            pw, page = self._create_page()
+            session = self._create_page()
+            page = session.page
 
             page.goto(DK_BASE_URL, wait_until='domcontentloaded')
 
@@ -299,8 +337,7 @@ class DraftKingsScraper:
             return []
 
         finally:
-            if pw:
-                self._cleanup(pw)
+            self._cleanup(session)
 
     def scrape_futures_champion(self) -> list[dict]:
         """Scrape DraftKings futures champion odds using Playwright.
@@ -310,9 +347,10 @@ class DraftKingsScraper:
         """
         print('[Fetching] DraftKings futures champion odds...')
 
-        pw, page = None, None
+        session = None
         try:
-            pw, page = self._create_page()
+            session = self._create_page()
+            page = session.page
             page.goto(DK_FUTURES_CHAMPION_URL, wait_until='domcontentloaded')
 
             print('Waiting for DraftKings to load (15 seconds)...')
@@ -341,8 +379,7 @@ class DraftKingsScraper:
             return []
 
         finally:
-            if pw:
-                self._cleanup(pw)
+            self._cleanup(session)
 
     def parse_games(self, page) -> list[GameOdds]:
         """Parse games from DraftKings page using Playwright.
@@ -560,14 +597,10 @@ class DraftKingsScraper:
                     ou = 'N/A'
 
                     # Find outcome cells near these team elements
-                    game_block = (
-                        team_elements[i].query_selector(
-                            "xpath=ancestor::*[contains(@class,'sportsbook-table__body') or "
-                            "contains(@class,'event-cell') or "
-                            "contains(@class,'sportsbook-event-accordion')]"
-                        )
-                        if team_elements
-                        else None
+                    game_block = team_elements[i].query_selector(
+                        "xpath=./ancestor::*[contains(@class,'sportsbook-table__body') or "
+                        "contains(@class,'event-cell') or "
+                        "contains(@class,'sportsbook-event-accordion')]"
                     )
 
                     if game_block:
@@ -636,6 +669,36 @@ class DraftKingsScraper:
 
         return spread, moneyline, ou
 
+    def _parse_futures_buttons(self, page, bet_type: str) -> list[dict]:
+        results: list[dict] = []
+        templates = page.query_selector_all(
+            "[class*='cb-market__template'], [class*='sportsbook-accordion__wrapper']"
+        )
+
+        for template in templates:
+            buttons = template.query_selector_all("[class*='cb-market__button'], button")
+            for button in buttons:
+                title = button.query_selector("[data-testid='button-title-market-board']")
+                team_name = title.inner_text().strip() if title else ''
+                if not team_name:
+                    continue
+
+                odds_elem = button.query_selector("[data-testid='button-odds-market-board']")
+                odds_text = (
+                    odds_elem.inner_text().strip() if odds_elem else button.inner_text().strip()
+                )
+                odds = first_american_odds(odds_text) or 'N/A'
+                results.append(
+                    {
+                        'team': team_name,
+                        'odds': odds,
+                        'bet_type': bet_type,
+                        'source': 'DraftKings',
+                    }
+                )
+
+        return results
+
     def parse_futures_category(self, page, bet_type: str) -> list[dict]:
         """Parse a DraftKings futures betting category.
 
@@ -686,10 +749,12 @@ class DraftKingsScraper:
         except Exception as e:
             logger.warning('Failed to parse DraftKings futures %s: %s', bet_type, e)
 
-        return results
+        return results or self._parse_futures_buttons(page, bet_type)
 
     def parse_futures_champion(self, page) -> list[dict]:
-        return self.parse_futures_category(page, 'champion')
+        return self._parse_futures_buttons(page, 'champion') or self.parse_futures_category(
+            page, 'champion'
+        )
 
     def parse_futures_playoffs(self, page) -> list[dict]:
         return self.parse_futures_category(page, 'playoffs')
