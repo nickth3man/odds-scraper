@@ -20,8 +20,15 @@ class _FakeCurlResponse(_FakeResponse):
     pass
 
 
-def test_fallback_user_agent_returns_default_browser_string():
-    assert 'Mozilla/5.0' in http_client._FallbackUserAgent().random
+def test_build_user_agent_provider_falls_back_when_dependency_is_missing(monkeypatch):
+    def raise_import_error(_name: str):
+        raise ImportError
+
+    monkeypatch.setattr(http_client, 'import_module', raise_import_error)
+
+    provider = http_client._build_user_agent_provider()
+
+    assert 'Mozilla/5.0' in provider.random
 
 
 def test_build_headers_uses_current_user_agent(monkeypatch):

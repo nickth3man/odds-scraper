@@ -41,7 +41,7 @@ def test_get_all_games_resets_previous_results(monkeypatch):
     def scrape_no_draftkings_games(self):
         return []
 
-    def suppress_display(*_args):
+    def suppress_display(self, *_args):
         return None
 
     monkeypatch.setattr(LiveOddsScraper, 'scrape_espn_nba_odds', scrape_espn)
@@ -78,8 +78,8 @@ def test_scrape_draftkings_odds_skips_empty_results(monkeypatch):
 
 
 def test_parse_draftkings_html_delegates_to_scraper(monkeypatch):
-    def parse_html_stub(html: str):
-        return [{'html': html}]
+    def parse_html_stub(html_content: str):
+        return [{'html': html_content}]
 
     monkeypatch.setattr(DraftKingsScraper, 'parse_html', parse_html_stub)
 
