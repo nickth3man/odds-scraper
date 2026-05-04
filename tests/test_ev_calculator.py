@@ -175,6 +175,18 @@ def test_evaluate_bet_appends_to_bets_list():
     assert calculator.bets[1]['team'] == 'B'
 
 
+def test_evaluate_bet_zero_stake():
+    """Zero stake should not raise ZeroDivisionError."""
+    calculator = EVCalculator()
+    result = calculator.evaluate_bet(
+        team='Free Bet', model_probability=0.60, american_odds=-110, stake=0
+    )
+
+    assert result['expected_value_per_stake'] == '$0.00'
+    assert result['expected_value_percent'] == '0.0%'
+    assert result['recommendation'] == '[PASS] Slight Negative Expected Value'
+
+
 # ---------------------------------------------------------------------------
 # calculate_kelly_criterion
 # ---------------------------------------------------------------------------

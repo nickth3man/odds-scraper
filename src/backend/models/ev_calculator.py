@@ -68,7 +68,7 @@ class EVCalculator:
         """
         sportsbook_probability = self.convert_american_to_probability(american_odds)
         expected_value = self.calculate_expected_value(model_probability, american_odds, stake)
-        expected_value_percent = (expected_value / stake) * 100
+        expected_value_percent = (expected_value / stake) * 100 if stake else 0.0
 
         # Determine recommendation
         if expected_value > 0:
