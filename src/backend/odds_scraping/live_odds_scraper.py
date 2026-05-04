@@ -27,10 +27,10 @@ class LiveOddsScraper:
         self.all_games.extend(games)
         return games
 
-    # ============ DRAFTKINGS SCRAPING (Selenium) ============
+    # ============ DRAFTKINGS SCRAPING (Playwright) ============
 
     def scrape_draftkings_odds(self):
-        """Scrape live odds from DraftKings using Selenium."""
+        """Scrape live odds from DraftKings using Playwright."""
         games = self._dk.scrape_odds()
         if games:
             self.all_games.extend(games)

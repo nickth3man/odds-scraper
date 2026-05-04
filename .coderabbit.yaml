@@ -1,0 +1,98 @@
+language: en-US
+early_access: false
+enable_free_tier: true
+
+tone_instructions: >-
+  Be direct, practical, and specific. Prioritize correctness, testability, production safety,
+  and maintainable Python over stylistic nitpicks covered by Ruff.
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_placeholder: '@coderabbitai summary'
+  review_status: true
+  collapse_walkthrough: true
+  changed_files_summary: true
+  sequence_diagrams: true
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: true
+  poem: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+  path_filters:
+    - '!data/**'
+    - '!htmlcov/**'
+    - '!reference/**'
+    - '!**/*.csv'
+    - '!**/*.png'
+    - '!**/*.jpg'
+    - '!**/*.jpeg'
+    - '!**/*.gif'
+    - '!**/*.webp'
+  path_instructions:
+    - path: 'src/backend/**'
+      instructions: >-
+        Focus on scraper resilience, async correctness, retry/backoff behavior, rate limiting,
+        parser fallback coverage, and deterministic offline tests. Do not recommend paid services.
+    - path: 'src/frontend/gui/**'
+      instructions: >-
+        Focus on NiceGUI UX, blocking calls in UI handlers, user-facing errors, localhost behavior,
+        accessibility, and clear loading or empty states.
+    - path: 'tests/**'
+      instructions: >-
+        Prefer fixture-driven tests. Avoid tests that depend on live sportsbook pages, account state,
+        geo-gating, or unstable network behavior.
+    - path: '.github/workflows/**'
+      instructions: >-
+        Review permissions, pinned actions, concurrency, uv lock usage, artifact permissions,
+        release safety, and supply-chain risk.
+  tools:
+    ruff:
+      enabled: true
+    markdownlint:
+      enabled: true
+    shellcheck:
+      enabled: true
+    github-checks:
+      enabled: true
+    actionlint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    osvScanner:
+      enabled: true
+    languagetool:
+      enabled: false
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  web_search:
+    enabled: true
+  learnings:
+    scope: auto
+  issues:
+    scope: auto
+  pull_requests:
+    scope: auto
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - 'AGENTS.md'
+      - 'CONTRIBUTING.md'
+      - 'docs/**/*.md'
+
+code_generation:
+  docstrings:
+    language: en-US
+  unit_tests:
+    path: tests
+
+issue_enrichment:
+  mode: auto

@@ -1,0 +1,52 @@
+backend:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/backend/**
+          - tests/**/backend/**
+
+frontend:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/frontend/**
+          - tests/**/frontend/**
+
+scraper:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/backend/**/espn*.py
+          - src/backend/**/draftkings*.py
+          - src/backend/**/odds_scraping/**
+          - tests/**/fixtures/**
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/**
+          - .coderabbit.yaml
+          - .sourcery.yaml
+          - .pr_agent.toml
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - README.md
+          - docs/**
+          - CONTRIBUTING.md
+          - SECURITY.md
+
+configuration:
+  - changed-files:
+      - any-glob-to-any-file:
+          - pyproject.toml
+          - uv.lock
+          - pyrightconfig.json
+          - config.json
+          - .python-version
+          - .editorconfig
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - pyproject.toml
+          - uv.lock
+          - .github/dependabot.yml

@@ -2,4 +2,4 @@
 
 from __future__ import annotations
 
-from tests.selenium_fakes import FakeDriver, FakeWebElement  # noqa: F401
+from tests.browser_fakes import FakeElement, FakePage  # noqa: F401

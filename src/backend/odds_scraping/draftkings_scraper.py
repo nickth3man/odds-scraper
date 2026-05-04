@@ -189,14 +189,20 @@ from __future__ import annotations
 # ==============================================================================
 import logging
 import re
+from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
+
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright
+from playwright_stealth import Stealth
 
 from .config import DK_BASE_URL, DK_FUTURES_CHAMPION_URL
 from .parsers import GameOdds, first_american_odds, first_signed_number, first_total
 
 if TYPE_CHECKING:
     from parsel import Selector as HtmlSelector
+    from playwright.sync_api import Browser, BrowserContext, Page, Playwright
 else:
     HtmlSelector = object
 
@@ -208,103 +214,115 @@ except ImportError:  # pragma: no cover
     _HtmlSelector: type[HtmlSelector] | None = None
     _PARSEL_AVAILABLE = False
 
-
-class _ByFallback:
-    CSS_SELECTOR = 'css selector'
-    XPATH = 'xpath'
-
-
-class _NoSuchElementExceptionFallbackError(Exception):
-    """Fallback exception used when Selenium is unavailable."""
-
-
-By = _ByFallback
-NoSuchElementException = _NoSuchElementExceptionFallbackError
-
-try:
-    from selenium.common.exceptions import NoSuchElementException as SeleniumNoSuchElementException
-    from selenium.webdriver.common.by import By
-
-    NoSuchElementException = SeleniumNoSuchElementException
-    SELENIUM_AVAILABLE = True
-except ImportError:
-    SELENIUM_AVAILABLE = False
-
-
 logger = logging.getLogger(__name__)
+
+USER_AGENT = (
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+    'AppleWebKit/537.36 (KHTML, like Gecko) '
+    'Chrome/124.0.0.0 Safari/537.36'
+)
+
+
+@dataclass(frozen=True)
+class _BrowserSession:
+    pw: Playwright
+    browser: Browser
+    context: BrowserContext
+    page: Page
+
+
+def _close_playwright_resource(resource: Page | BrowserContext | Browser | None) -> None:
+    if resource is None:
+        return
+    resource.close()
 
 
 class DraftKingsScraper:
     """Scrape and parse DraftKings NBA odds."""
 
     @staticmethod
-    def _create_driver():
-        """Create a headless Chrome driver with anti-detection settings."""
-        from selenium import webdriver
-        from selenium.webdriver.chrome.options import Options
+    def _create_page() -> _BrowserSession:
+        """Create a stealth-configured Playwright browser page."""
+        pw = sync_playwright().start()
+        browser: Browser | None = None
+        context: BrowserContext | None = None
+        page: Page | None = None
+        try:
+            browser = pw.chromium.launch(
+                headless=True,
+                args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--window-size=1920,1080',
+                ],
+            )
+            context = browser.new_context(
+                viewport={'width': 1920, 'height': 1080},
+                user_agent=USER_AGENT,
+            )
+            context.add_init_script(
+                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+            )
+            page = context.new_page()
+            Stealth().apply_stealth_sync(page)
+            return _BrowserSession(pw=pw, browser=browser, context=context, page=page)
+        except Exception:
+            _close_playwright_resource(page)
+            _close_playwright_resource(context)
+            _close_playwright_resource(browser)
+            pw.stop()
+            raise
 
-        chrome_options = Options()
-        chrome_options.add_argument('--headless=new')
-        chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_argument(
-            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-            'AppleWebKit/537.36 (KHTML, like Gecko) '
-            'Chrome/124.0.0.0 Safari/537.36'
-        )
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
-        chrome_options.add_experimental_option('useAutomationExtension', False)
-
-        driver = webdriver.Chrome(options=chrome_options)
-        driver.execute_cdp_cmd(
-            'Page.addScriptToEvaluateOnNewDocument',
-            {'source': 'Object.defineProperty(navigator, "webdriver", {get: () => undefined})'},
-        )
-        return driver
+    @staticmethod
+    def _cleanup(session: _BrowserSession | None) -> None:
+        """Clean up Playwright resources from leaf objects back to the driver."""
+        if session is None:
+            return
+        for resource_name, resource in (
+            ('page', session.page),
+            ('context', session.context),
+            ('browser', session.browser),
+        ):
+            try:
+                _close_playwright_resource(resource)
+            except Exception as exc:
+                logger.warning('Failed to close DraftKings Playwright %s: %s', resource_name, exc)
+        session.pw.stop()
 
     def scrape_odds(self) -> list[GameOdds]:
+        """Scrape live odds from DraftKings using Playwright.
+
+        Playwright launches a stealth-configured Chromium browser, navigates
+        to DraftKings, waits for the game table to load, then passes the page
+        to parse_games() for HTML extraction.
         """
-        Scrape live odds from DraftKings using Selenium.
-
-        DraftKings loads odds dynamically with JavaScript. Selenium Manager
-        (built into Selenium 4.6+) automatically downloads the correct
-        ChromeDriver — no webdriver-manager package required.
-        """
-        if not SELENIUM_AVAILABLE:
-            print('[WARN] Selenium not available. Install with: pip install selenium')
-            return []
-
-        from selenium.common.exceptions import TimeoutException
-        from selenium.webdriver.support import expected_conditions as EC  # noqa: N812
-        from selenium.webdriver.support.ui import WebDriverWait
-
         print('[Fetching] Live odds from DraftKings (this takes 10-15 seconds)...\n')
 
-        driver = None
+        session = None
         try:
-            driver = self._create_driver()
+            session = self._create_page()
+            page = session.page
 
-            driver.get(DK_BASE_URL)
+            page.goto(DK_BASE_URL, wait_until='domcontentloaded')
 
             print('Waiting for DraftKings to load (20 seconds)...')
 
-            # Wait for the game table — DraftKings uses cb-market or event-cell classes
             try:
-                WebDriverWait(driver, 20).until(
-                    EC.presence_of_element_located(
-                        (By.CSS_SELECTOR, "[class*='cb-market'], [class*='event-cell']")
-                    )
+                page.wait_for_selector(
+                    "[class*='cb-market'], [class*='event-cell']",
+                    timeout=20000,
                 )
                 print('[OK] Page loaded!\n')
-            except TimeoutException:
+            except PlaywrightTimeoutError:
                 print('[WARN] Page took too long to load — saving debug snapshot\n')
-                logger.warning('DraftKings timeout. Page title: %s', driver.title)
-                logger.warning('Page source preview: %.500s', driver.page_source)
-                driver.quit()
+                logger.warning('DraftKings timeout. Page title: %s', page.title())
+                logger.warning(
+                    'Page source preview: %.500s',
+                    page.content()[:500] if page else '',
+                )
                 return []
 
-            logger.info('DraftKings page title: %s', driver.title)
-            games = self.parse_games(driver)
+            logger.info('DraftKings page title: %s', page.title())
+            games = self.parse_games(page)
             logger.info('DraftKings parse_games returned %d games', len(games))
 
             if games:
@@ -319,45 +337,35 @@ class DraftKingsScraper:
             return []
 
         finally:
-            if driver:
-                driver.quit()
+            self._cleanup(session)
 
     def scrape_futures_champion(self) -> list[dict]:
-        """Scrape DraftKings futures champion odds using Selenium.
+        """Scrape DraftKings futures champion odds using Playwright.
 
         Navigates to ?category=futures&subcategory=champion and parses
         team names with American championship odds.
         """
-        if not SELENIUM_AVAILABLE:
-            print('[WARN] Selenium not available. Install with: pip install selenium')
-            return []
-
-        from selenium.common.exceptions import TimeoutException
-        from selenium.webdriver.support import expected_conditions as EC  # noqa: N812
-        from selenium.webdriver.support.ui import WebDriverWait
-
         print('[Fetching] DraftKings futures champion odds...')
 
-        driver = None
+        session = None
         try:
-            driver = self._create_driver()
-            driver.get(DK_FUTURES_CHAMPION_URL)
+            session = self._create_page()
+            page = session.page
+            page.goto(DK_FUTURES_CHAMPION_URL, wait_until='domcontentloaded')
 
             print('Waiting for DraftKings to load (15 seconds)...')
 
             try:
-                WebDriverWait(driver, 15).until(
-                    EC.presence_of_element_located(
-                        (By.CSS_SELECTOR, "[class*='cb-market__button']")
-                    )
+                page.wait_for_selector(
+                    "[class*='cb-market__button']",
+                    timeout=15000,
                 )
                 print('[OK] Champion page loaded!')
-            except TimeoutException:
+            except PlaywrightTimeoutError:
                 print('[WARN] Champion page took too long to load')
-                driver.quit()
                 return []
 
-            results = self.parse_futures_champion(driver)
+            results = self.parse_futures_champion(page)
 
             if results:
                 print(f'[OK] DraftKings Champion: Found {len(results)} teams')
@@ -371,36 +379,35 @@ class DraftKingsScraper:
             return []
 
         finally:
-            if driver:
-                driver.quit()
+            self._cleanup(session)
 
-    def parse_games(self, driver) -> list[GameOdds]:
-        """Parse games from DraftKings page using Selenium.
+    def parse_games(self, page) -> list[GameOdds]:
+        """Parse games from DraftKings page using Playwright.
 
-        When parsel is available, HTML is extracted once from the driver and
-        parsed with CSS selectors — no repeated Selenium element queries.
-        The Selenium paths remain as a fallback.
+        When parsel is available, HTML is extracted once from the page and
+        parsed with CSS selectors — no repeated element queries.
+        The Playwright paths remain as a fallback.
         """
-        if _PARSEL_AVAILABLE and _HtmlSelector is not None and hasattr(driver, 'page_source'):
-            html = driver.page_source
+        if _PARSEL_AVAILABLE and _HtmlSelector is not None:
+            html = page.content()
             games = self.parse_html(html)
             if games:
                 return games
 
         # Try new cb-market structure first (component-builder layout)
-        games = self.parse_cb_market(driver)
+        games = self.parse_cb_market(page)
         if games:
             return games
 
         # Fallback to old event-cell structure
-        return self.parse_event_cells(driver)
+        return self.parse_event_cells(page)
 
     @staticmethod
     def parse_html(html: str) -> list[GameOdds]:
         """Parse DraftKings NBA page HTML using parsel CSS selectors.
 
-        Accepts raw HTML string (e.g. from ``driver.page_source``) and returns
-        a list of game dicts with the same schema as the Selenium paths.
+        Accepts raw HTML string (e.g. from page.content()) and returns
+        a list of game dicts with the same schema as the Playwright paths.
         Returns an empty list when parsel is not installed.
         """
         if not _PARSEL_AVAILABLE or _HtmlSelector is None:
@@ -461,15 +468,14 @@ class DraftKingsScraper:
 
         return games
 
-    def parse_cb_market(self, driver) -> list[GameOdds]:
+    def parse_cb_market(self, page) -> list[GameOdds]:
         """Parse DraftKings games using cb-market__template structure."""
         games = []
 
         try:
             # Find game templates — DraftKings uses both 2-column and 4-column layouts
-            templates = driver.find_elements(
-                By.CSS_SELECTOR,
-                "[class*='cb-market__template--2-columns'], [class*='cb-market__template--4-columns']",
+            templates = page.query_selector_all(
+                "[class*='cb-market__template--2-columns'], [class*='cb-market__template--4-columns']"
             )
 
             if not templates:
@@ -478,22 +484,22 @@ class DraftKingsScraper:
             for template in templates:
                 try:
                     # Team names are in cb-market__label-inner--parlay elements
-                    team_elems = template.find_elements(
-                        By.CSS_SELECTOR, "[class*='cb-market__label-inner--parlay']"
+                    team_elems = template.query_selector_all(
+                        "[class*='cb-market__label-inner--parlay']"
                     )
 
                     if len(team_elems) < 2:
                         continue
 
-                    away_team = team_elems[0].text.strip()
-                    home_team = team_elems[1].text.strip()
+                    away_team = team_elems[0].inner_text().strip()
+                    home_team = team_elems[1].inner_text().strip()
 
                     if not away_team or not home_team:
                         continue
 
                     # Find all market buttons in this template
-                    buttons = template.find_elements(
-                        By.CSS_SELECTOR, "button[data-testid*='component-builder-market-button']"
+                    buttons = template.query_selector_all(
+                        "button[data-testid*='component-builder-market-button']"
                     )
 
                     away_spread = 'N/A'
@@ -506,34 +512,34 @@ class DraftKingsScraper:
                             testid = button.get_attribute('data-testid') or ''
 
                             if '0HC' in testid:
-                                points_elem = button.find_element(
-                                    By.CSS_SELECTOR, "[data-testid='button-points-market-board']"
+                                points_elem = button.query_selector(
+                                    "[data-testid='button-points-market-board']"
                                 )
-                                points = points_elem.text.strip() if points_elem else ''
+                                points = points_elem.inner_text().strip() if points_elem else ''
                                 if away_spread == 'N/A':
                                     away_spread = points
                             elif '0OU' in testid:
-                                title_elem = button.find_element(
-                                    By.CSS_SELECTOR, "[data-testid='button-title-market-board']"
+                                title_elem = button.query_selector(
+                                    "[data-testid='button-title-market-board']"
                                 )
-                                title = title_elem.text.strip() if title_elem else ''
-                                points_elem = button.find_element(
-                                    By.CSS_SELECTOR, "[data-testid='button-points-market-board']"
+                                title = title_elem.inner_text().strip() if title_elem else ''
+                                points_elem = button.query_selector(
+                                    "[data-testid='button-points-market-board']"
                                 )
-                                points = points_elem.text.strip() if points_elem else ''
+                                points = points_elem.inner_text().strip() if points_elem else ''
                                 if over_total == 'N/A' and title.upper() == 'O':
                                     over_total = points
                             elif '0ML' in testid:
-                                odds_elem = button.find_element(
-                                    By.CSS_SELECTOR, "[data-testid='button-odds-market-board']"
+                                odds_elem = button.query_selector(
+                                    "[data-testid='button-odds-market-board']"
                                 )
-                                odds = odds_elem.text.strip() if odds_elem else ''
+                                odds = odds_elem.inner_text().strip() if odds_elem else ''
                                 if away_ml == 'N/A':
                                     away_ml = odds
                                 elif home_ml == 'N/A':
                                     home_ml = odds
 
-                        except (AttributeError, ValueError, NoSuchElementException):
+                        except (AttributeError, ValueError):
                             continue
 
                     games.append(
@@ -560,19 +566,17 @@ class DraftKingsScraper:
             logger.warning('Error parsing DraftKings cb-market structure: %s', e)
             return []
 
-    def parse_event_cells(self, driver) -> list[GameOdds]:
+    def parse_event_cells(self, page) -> list[GameOdds]:
         """Parse DraftKings games using legacy event-cell structure."""
         games = []
 
         try:
             # Team name elements — DraftKings uses event-cell__name-text (stable partial class)
-            team_elements = driver.find_elements(
-                By.CSS_SELECTOR, "[class*='event-cell__name-text']"
-            )
+            team_elements = page.query_selector_all("[class*='event-cell__name-text']")
 
             if not team_elements:
                 # Fallback: try broader event-cell selector
-                team_elements = driver.find_elements(By.CSS_SELECTOR, "[class*='event-cell__team']")
+                team_elements = page.query_selector_all("[class*='event-cell__team']")
 
             if not team_elements:
                 logger.warning('DraftKings: no team elements found — selectors may be stale')
@@ -581,8 +585,8 @@ class DraftKingsScraper:
             # Teams come in pairs: away, home, away, home, ...
             for i in range(0, len(team_elements) - 1, 2):
                 try:
-                    away_team = team_elements[i].text.strip()
-                    home_team = team_elements[i + 1].text.strip()
+                    away_team = team_elements[i].inner_text().strip()
+                    home_team = team_elements[i + 1].inner_text().strip()
 
                     if not away_team or not home_team:
                         continue
@@ -593,21 +597,16 @@ class DraftKingsScraper:
                     ou = 'N/A'
 
                     # Find outcome cells near these team elements
-                    game_block = (
-                        team_elements[i].find_element(
-                            By.XPATH,
-                            "./ancestor::*[contains(@class,'sportsbook-table__body') or "
-                            "contains(@class,'event-cell') or "
-                            "contains(@class,'sportsbook-event-accordion')]",
-                        )
-                        if team_elements
-                        else None
+                    game_block = team_elements[i].query_selector(
+                        "xpath=./ancestor::*[contains(@class,'sportsbook-table__body') or "
+                        "contains(@class,'event-cell') or "
+                        "contains(@class,'sportsbook-event-accordion')]"
                     )
 
                     if game_block:
-                        outcome_cells = game_block.find_elements(
-                            By.CSS_SELECTOR,
-                            "button[aria-label*='Moneyline'], [class*='sportsbook-outcome-cell__body']",
+                        outcome_cells = game_block.query_selector_all(
+                            "button[aria-label*='Moneyline'], "
+                            "[class*='sportsbook-outcome-cell__body']"
                         )
                         spread, moneyline, ou = self.parse_markets(outcome_cells, away_team)
 
@@ -641,7 +640,7 @@ class DraftKingsScraper:
         ou = 'N/A'
 
         for cell in outcome_cells:
-            text = cell.text.strip()
+            text = cell.inner_text().strip()
             label = cell.get_attribute('aria-label') or ''
             market_text = f'{label} {text}'
             market_text_lower = market_text.lower()
@@ -670,7 +669,37 @@ class DraftKingsScraper:
 
         return spread, moneyline, ou
 
-    def parse_futures_category(self, driver, bet_type: str) -> list[dict]:
+    def _parse_futures_buttons(self, page, bet_type: str) -> list[dict]:
+        results: list[dict] = []
+        templates = page.query_selector_all(
+            "[class*='cb-market__template'], [class*='sportsbook-accordion__wrapper']"
+        )
+
+        for template in templates:
+            buttons = template.query_selector_all("[class*='cb-market__button'], button")
+            for button in buttons:
+                title = button.query_selector("[data-testid='button-title-market-board']")
+                team_name = title.inner_text().strip() if title else ''
+                if not team_name:
+                    continue
+
+                odds_elem = button.query_selector("[data-testid='button-odds-market-board']")
+                odds_text = (
+                    odds_elem.inner_text().strip() if odds_elem else button.inner_text().strip()
+                )
+                odds = first_american_odds(odds_text) or 'N/A'
+                results.append(
+                    {
+                        'team': team_name,
+                        'odds': odds,
+                        'bet_type': bet_type,
+                        'source': 'DraftKings',
+                    }
+                )
+
+        return results
+
+    def parse_futures_category(self, page, bet_type: str) -> list[dict]:
         """Parse a DraftKings futures betting category.
 
         HTML structure: sportsbook-accordion__wrapper sections contain
@@ -680,29 +709,27 @@ class DraftKingsScraper:
         results: list[dict] = []
 
         try:
-            wrappers = driver.find_elements(
-                By.CSS_SELECTOR, "[class*='sportsbook-accordion__wrapper']"
-            )
+            wrappers = page.query_selector_all("[class*='sportsbook-accordion__wrapper']")
 
             for wrapper in wrappers:
-                teams = wrapper.find_elements(
-                    By.CSS_SELECTOR, "[class*='content-sports-hierarchy-teams__team']"
+                teams = wrapper.query_selector_all(
+                    "[class*='content-sports-hierarchy-teams__team']"
                 )
 
                 for team in teams:
                     try:
                         # Team name is in an <a> tag
-                        name_elem = team.find_element(By.CSS_SELECTOR, 'a')
-                        team_name = name_elem.text.strip()
+                        name_elem = team.query_selector('a')
+                        team_name = name_elem.inner_text().strip() if name_elem else ''
 
                         if not team_name:
                             continue
 
                         # American odds in button text within the team row
                         odds = 'N/A'
-                        buttons = team.find_elements(By.CSS_SELECTOR, 'button')
+                        buttons = team.query_selector_all('button')
                         for btn in buttons:
-                            found = first_american_odds(btn.text.strip())
+                            found = first_american_odds(btn.inner_text().strip())
                             if found:
                                 odds = found
                                 break
@@ -722,22 +749,24 @@ class DraftKingsScraper:
         except Exception as e:
             logger.warning('Failed to parse DraftKings futures %s: %s', bet_type, e)
 
-        return results
+        return results or self._parse_futures_buttons(page, bet_type)
 
-    def parse_futures_champion(self, driver) -> list[dict]:
-        return self.parse_futures_category(driver, 'champion')
+    def parse_futures_champion(self, page) -> list[dict]:
+        return self._parse_futures_buttons(page, 'champion') or self.parse_futures_category(
+            page, 'champion'
+        )
 
-    def parse_futures_playoffs(self, driver) -> list[dict]:
-        return self.parse_futures_category(driver, 'playoffs')
+    def parse_futures_playoffs(self, page) -> list[dict]:
+        return self.parse_futures_category(page, 'playoffs')
 
-    def parse_futures_conference(self, driver) -> list[dict]:
-        return self.parse_futures_category(driver, 'conference')
+    def parse_futures_conference(self, page) -> list[dict]:
+        return self.parse_futures_category(page, 'conference')
 
-    def parse_futures_series_props(self, driver) -> list[dict]:
-        return self.parse_futures_category(driver, 'series_props')
+    def parse_futures_series_props(self, page) -> list[dict]:
+        return self.parse_futures_category(page, 'series_props')
 
-    def parse_futures_series_player_props(self, driver) -> list[dict]:
-        return self.parse_futures_category(driver, 'series_player_props')
+    def parse_futures_series_player_props(self, page) -> list[dict]:
+        return self.parse_futures_category(page, 'series_player_props')
 
-    def parse_futures_seed_to_win(self, driver) -> list[dict]:
-        return self.parse_futures_category(driver, 'seed_to_win')
+    def parse_futures_seed_to_win(self, page) -> list[dict]:
+        return self.parse_futures_category(page, 'seed_to_win')

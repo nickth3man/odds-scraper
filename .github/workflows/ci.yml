@@ -1,10 +1,11 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -13,143 +14,225 @@ concurrency:
 permissions:
   contents: read
 
-jobs:
-  # ── Quality gate: lint + format (~20s) ──────────────────────
-  quality:
-    name: Code Quality
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
+defaults:
+  run:
+    shell: bash
 
-      - uses: astral-sh/setup-uv@v7
+env:
+  FORCE_COLOR: '1'
+  PYTHONUNBUFFERED: '1'
+  UV_FROZEN: '1'
+  UV_LINK_MODE: copy
+
+jobs:
+  quality:
+    name: Lint, format, and build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: '3.12'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           enable-cache: true
-          cache-dependency-glob: "uv.lock"
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
 
-      - run: uv sync --frozen
-
-      - name: Ruff lint
-        uses: astral-sh/ruff-action@v3
-        with:
-          args: "check"
+      - name: Sync dependencies
+        run: uv sync --group dev
 
       - name: Ruff format check
-        uses: astral-sh/ruff-action@v3
-        with:
-          args: "format --check"
+        run: uv run --frozen ruff format --check .
 
-  # ── Type checks (ty + pyright) ─────────────────────────────
+      - name: Ruff lint
+        run: uv run --frozen ruff check --output-format=github .
+
+      - name: Verify package builds
+        run: uv build
+
   typecheck:
-    name: Type Check
-    needs: quality
+    name: Type checks
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
-      - uses: astral-sh/setup-uv@v7
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: '3.12'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           enable-cache: true
-          cache-dependency-glob: "uv.lock"
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
 
-      - run: uv sync --frozen
+      - name: Sync dependencies
+        run: uv sync --group dev
 
-      - name: Ty (fast, experimental)
+      - name: ty check (advisory while ty is still stabilizing)
         continue-on-error: true
-        run: uv run ty check
+        run: uv run --frozen ty check
 
-      - name: Pyright
-        run: uv run pyright
+      - name: pyright check (blocking)
+        run: uv run --frozen pyright
 
-  # ── Security audit ─────────────────────────────────────────
-  security:
-    name: Security Audit
-    needs: quality
+  tests:
+    name: Tests - Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      artifact-metadata: write
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12', '3.13']
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
-      - uses: astral-sh/setup-uv@v7
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           enable-cache: true
-          cache-dependency-glob: "uv.lock"
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+          cache-suffix: py${{ matrix.python-version }}
 
-      - run: uv sync --frozen
+      - name: Sync dependencies
+        run: uv sync --group dev
 
-      - name: Run pip-audit
-        run: uv run --with pip-audit pip-audit --desc --progress-spinner off
+      - name: Install Playwright browsers when present
+        run: |
+          if uv run --frozen python -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('playwright') else 1)"; then
+            uv run --frozen playwright install --with-deps chromium
+          else
+            echo 'Playwright is not installed; skipping browser setup.'
+          fi
 
-  # ── Dependency review (PRs only, independent of quality gate) ──
+      - name: Run tests with coverage gate
+        env:
+          ODDS_SCRAPER_OFFLINE_TESTS: '1'
+        run: |
+          uv run --frozen pytest \
+            --cov-report=term-missing:skip-covered \
+            --cov-report=xml
+
+      - name: Upload coverage XML
+        if: always() && matrix.python-version == '3.12'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: error
+          retention-days: 14
+
   dependency-review:
-    name: Dependency Review
+    name: Dependency review
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/dependency-review-action@v4
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          fail-on-severity: moderate
+          persist-credentials: false
 
-  # ── Tests with coverage ────────────────────────────────────
-  test:
-    name: Tests
-    needs: quality
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        with:
+          config-file: .github/dependency-review-config.yml
+
+  audit:
+    name: Dependency audit
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
-      - uses: astral-sh/setup-uv@v7
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: '3.12'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           enable-cache: true
-          cache-dependency-glob: "uv.lock"
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
 
-      - run: uv sync --frozen
+      - name: Sync dependencies
+        run: uv sync --group dev
 
-      - name: Run tests with coverage
-        run: |
-          uv run pytest \
-            --cov \
-            --cov-report=term-missing \
-            --cov-report=xml \
-            --cov-report=html \
-            --cov-fail-under=65 \
-            --junitxml=test-results.xml \
-            -q
+      - name: pip-audit
+        run: uv run --with pip-audit --frozen pip-audit --local --strict --skip-editable
 
-      - name: Surface test results
-        if: always()
-        uses: pmeier/pytest-results-action@v0.9.0
-        with:
-          path: test-results.xml
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: coverage-report
-          path: |
-            coverage.xml
-            htmlcov/
-          include-hidden-files: true
-
-  # ── CI status summary (required branch protection gate) ────
   ci-status:
-    name: CI Status
-    if: always()
-    needs: [quality, typecheck, security, test]
+    name: CI status
     runs-on: ubuntu-latest
+    if: always()
+    needs: [quality, typecheck, tests, dependency-review, audit]
+    permissions: {}
     steps:
-      - name: Check all jobs passed
+      - name: Fail if any required job failed
         run: |
-          if [[ "${{ needs.quality.result }}" == "success" && \
-                "${{ needs.typecheck.result }}" == "success" && \
-                "${{ needs.security.result }}" == "success" && \
-                "${{ needs.test.result }}" == "success" ]]; then
-            echo "All CI jobs passed ✅"
-            exit 0
-          else
-            echo "One or more CI jobs failed ❌"
-            echo "quality: ${{ needs.quality.result }}"
-            echo "typecheck: ${{ needs.typecheck.result }}"
-            echo "security: ${{ needs.security.result }}"
-            echo "test: ${{ needs.test.result }}"
-            exit 1
-          fi
+          required='${{ toJSON(needs) }}'
+          echo "$required"
+          python - <<'PY'
+          import json
+          import os
+          import sys
+
+          needs = json.loads(os.environ['NEEDS_JSON'])
+          allowed_skips = {'dependency-review'}
+          failures = []
+
+          for name, data in needs.items():
+              result = data['result']
+              if result == 'success':
+                  continue
+              if result == 'skipped' and name in allowed_skips:
+                  continue
+              failures.append(f'{name}: {result}')
+
+          if failures:
+              print('Required CI jobs failed:')
+              print('\n'.join(failures))
+              sys.exit(1)
+          PY
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}

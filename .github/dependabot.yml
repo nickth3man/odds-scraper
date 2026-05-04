@@ -1,34 +1,44 @@
 version: 2
-
 updates:
-  # Python dependencies via uv
-  - package-ecosystem: "uv"
-    directory: "/"
+  - package-ecosystem: uv
+    directory: /
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: weekly
+      day: monday
+      time: '08:00'
+      timezone: America/New_York
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
     labels:
-      - "dependencies"
-      - "automated"
+      - dependencies
+      - automated
     commit-message:
-      prefix: "chore(deps)"
+      prefix: chore(deps)
+      include: scope
     groups:
-      python-packages:
+      python-dependencies:
         patterns:
-          - "*"
+          - '*'
 
-  # GitHub Actions
-  - package-ecosystem: "github-actions"
-    directory: "/"
+  - package-ecosystem: github-actions
+    directory: /
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: weekly
+      day: monday
+      time: '08:30'
+      timezone: America/New_York
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
     labels:
-      - "dependencies"
-      - "github-actions"
+      - dependencies
+      - github-actions
+      - automated
     commit-message:
-      prefix: "ci(deps)"
+      prefix: ci(deps)
+      include: scope
     groups:
       github-actions:
         patterns:
-          - "*"
+          - '*'

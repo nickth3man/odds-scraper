@@ -1,0 +1,65 @@
+[config]
+response_language = "en-US"
+patch_extra_lines_before = 5
+patch_extra_lines_after = 3
+log_level = "INFO"
+ignore_pr_title = ["\\[skip review\\]", "\\[skip qodo\\]"]
+ignore_pr_labels = ["do-not-review"]
+ignore_pr_authors = ["dependabot[bot]"]
+
+[ignore]
+glob = [
+  "data/**",
+  "reference/**",
+  "htmlcov/**",
+  ".venv/**",
+  "**/*.csv",
+  "**/*.png",
+  "**/*.jpg",
+  "**/*.jpeg",
+  "**/*.gif",
+  "**/*.webp",
+]
+
+[github_app]
+handle_pr_actions = ["opened", "reopened", "ready_for_review"]
+handle_push_trigger = true
+push_trigger_ignore_bot_commits = true
+push_trigger_ignore_merge_commits = true
+pr_commands = [
+  "/describe --pr_description.final_update_message=false",
+  "/review",
+  "/improve",
+]
+
+[pr_reviewer]
+persistent_comment = true
+final_update_message = true
+require_score_review = false
+require_tests_review = true
+require_estimate_effort_to_review = true
+require_can_be_split_review = true
+require_security_review = true
+require_ticket_analysis_review = false
+enable_review_labels_security = true
+enable_review_labels_effort = true
+extra_instructions = """
+Focus the review on:
+- Python 3.12+ type safety and async correctness.
+- Ruff formatting conventions: single quotes and 100-character lines.
+- Test coverage and deterministic offline tests using fixtures instead of live sportsbook traffic.
+- Scraper resilience: selector drift, retry/backoff behavior, rate limits, geo/bot gating, and safe error handling.
+- NiceGUI UX regressions, long-running scraping work blocking the event loop, and localhost-only assumptions.
+- Do not suggest paid CI, paid security scanners, or additional SaaS beyond CodeRabbit, Sourcery, and Qodo.
+"""
+
+[pr_code_suggestions]
+focus_only_on_problems = true
+commitable_code_suggestions = false
+extra_instructions = """
+Prefer small, reviewable diffs. Preserve public interfaces under src/backend and src/frontend unless the PR explicitly changes them.
+"""
+
+[pr_description]
+publish_labels = true
+extra_instructions = "Use concise sections: Summary, Testing, Risk, Screenshots or UI notes when relevant."
