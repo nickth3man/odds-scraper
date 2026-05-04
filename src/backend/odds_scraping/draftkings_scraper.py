@@ -214,12 +214,18 @@ class _ByFallback:
     XPATH = 'xpath'
 
 
+class _NoSuchElementExceptionFallbackError(Exception):
+    """Fallback exception used when Selenium is unavailable."""
+
+
 By = _ByFallback
+NoSuchElementException = _NoSuchElementExceptionFallbackError
 
 try:
-    from selenium.common.exceptions import NoSuchElementException
+    from selenium.common.exceptions import NoSuchElementException as SeleniumNoSuchElementException
     from selenium.webdriver.common.by import By
 
+    NoSuchElementException = SeleniumNoSuchElementException
     SELENIUM_AVAILABLE = True
 except ImportError:
     SELENIUM_AVAILABLE = False
