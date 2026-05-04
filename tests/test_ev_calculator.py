@@ -1,7 +1,5 @@
 """Unit tests for EVCalculator — expected value, Kelly criterion, and bet evaluation."""
 
-from typing import cast
-
 import pytest
 
 from backend.models.ev_calculator import EVCalculator
@@ -42,7 +40,7 @@ def test_american_to_probability_requires_numeric_input():
     calc = EVCalculator()
 
     with pytest.raises(TypeError, match='american_odds must be numeric'):
-        calc.american_to_probability(cast(int, 'bad'))
+        calc.american_to_probability('bad')  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------

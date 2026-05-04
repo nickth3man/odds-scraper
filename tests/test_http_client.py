@@ -9,7 +9,7 @@ class _FakeResponse:
         self.content = content
 
     def raise_for_status(self) -> None:
-        return None
+        pass
 
 
 class _FakeCurlResponse(_FakeResponse):
@@ -37,7 +37,12 @@ def test_get_merges_headers_and_tracks_domain(monkeypatch):
     seen: dict[str, object] = {}
     waited_on: list[str] = []
 
-    def fake_get(url: str, *, params: dict | None = None, headers: dict | None = None):
+    def fake_get(
+        url: str,
+        *,
+        params: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
+    ):
         seen['url'] = url
         seen['params'] = params
         seen['headers'] = headers
@@ -69,8 +74,8 @@ def test_get_json_uses_curl_when_impersonation_is_enabled(monkeypatch):
     def fake_curl_get(
         url: str,
         *,
-        params: dict | None = None,
-        headers: dict | None = None,
+        params: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
         impersonate: str | None = None,
         timeout: float | None = None,
     ) -> _FakeCurlResponse:
