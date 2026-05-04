@@ -4,7 +4,7 @@ A Python project for scraping NBA odds from multiple sportsbooks and calculating
 
 ## 📊 Features
 
-- **NiceGUI Dashboard** — Browser-based GUI for live odds and EV analysis (`python -m gui.main`)
+- **NiceGUI Dashboard** — Browser-based GUI for live odds and EV analysis (`python -m frontend.gui.main`)
 - **Sample Odds Scraper** — Multi-sportsbook odds collection (ESPN, DraftKings, FanDuel)
 - **Live Odds Scraper** — Real-time scraping from ESPN's JSON API + DraftKings via Selenium
 - **TLS Impersonation** — `curl_cffi` browser fingerprinting bypasses bot-detection on protected endpoints
@@ -41,28 +41,31 @@ A Python project for scraping NBA odds from multiple sportsbooks and calculating
 
 ```
 odds-scraper/
-├── gui/
-│   ├── main.py                  # NiceGUI entry point (python -m gui.main → localhost:8080)
-│   └── pages/
-│       ├── home.py              # Landing page with navigation
-│       ├── live_odds.py         # Live odds table (ESPN + DraftKings)
-│       └── ev_calc.py           # EV calculator form + Kelly Criterion
-├── odds_scraping/
-│   ├── __init__.py
-│   ├── odds_scraper.py          # Sample odds data provider
-│   ├── odds_comparison.py       # Cross-sportsbook comparison (unified schema)
-│   ├── http_client.py           # Resilient HTTP client (retry, rate-limit, UA rotation)
-│   ├── parsers.py               # Shared odds parsing/formatting helpers
-│   ├── espn_scraper.py          # ESPN JSON API adapter + scoreboard fallback
-│   ├── draftkings_scraper.py    # DraftKings Selenium/parsel source adapter
-│   └── live_odds_scraper.py     # Thin live scraper orchestrator
-├── models/
-│   └── ev_calculator.py         # Expected Value & Kelly Criterion
+├── src/
+│   ├── frontend/
+│   │   └── gui/
+│   │       ├── main.py          # NiceGUI entry point (python -m frontend.gui.main → localhost:8080)
+│   │       └── pages/
+│   │           ├── home.py      # Landing page with navigation
+│   │           ├── live_odds.py # Live odds table (ESPN + DraftKings)
+│   │           └── ev_calc.py   # EV calculator form + Kelly Criterion
+│   └── backend/
+│       ├── odds_scraping/
+│       │   ├── __init__.py
+│       │   ├── odds_scraper.py          # Sample odds data provider
+│       │   ├── odds_comparison.py       # Cross-sportsbook comparison (unified schema)
+│       │   ├── http_client.py           # Resilient HTTP client (retry, rate-limit, UA rotation)
+│       │   ├── parsers.py               # Shared odds parsing/formatting helpers
+│       │   ├── espn_scraper.py          # ESPN JSON API adapter + scoreboard fallback
+│       │   ├── draftkings_scraper.py    # DraftKings Selenium/parsel source adapter
+│       │   └── live_odds_scraper.py     # Thin live scraper orchestrator
+│       ├── models/
+│       │   └── ev_calculator.py         # Expected Value & Kelly Criterion
+│       └── fixtures/                    # HTML/JSON fixtures for offline tests
 ├── data/
 │   ├── sample_odds_data.csv
 │   ├── odds_comparison_results.csv
 │   └── nba_standings_2025_26.csv
-├── fixtures/                    # HTML/JSON fixtures for offline tests
 ├── tests/                       # pytest test suite (62 tests)
 ├── .claude/
 │   └── launch.json              # Dev server configurations
@@ -97,7 +100,7 @@ uv run pytest
 ### GUI Dashboard
 
 ```bash
-python -m gui.main
+python -m frontend.gui.main
 # Open http://localhost:8080
 ```
 
@@ -114,7 +117,7 @@ uv run ruff check .          # Lint
 uv run ruff check --fix      # Auto-fix safe lint issues
 uv run ty check              # Fast type check
 uv run pyright               # Static type check
-uv run pytest                # Run tests (62 tests)
+uv run pytest                # Run tests (65 tests)
 ```
 
 
@@ -142,7 +145,7 @@ uv run pytest                # Run tests (62 tests)
 | `uv run ruff check .`       | Lint the codebase               |
 | `uv run ty check`           | Fast type check                 |
 | `uv run pyright`            | Static type check               |
-| `uv run pytest`             | Run 62 tests                    |
+| `uv run pytest`             | Run 65 tests                    |
 | `uv lock --upgrade`         | Update all deps to latest       |
 
 Dependencies use `>=` constraints in `pyproject.toml`. Exact versions are pinned in `uv.lock` (commit this file).
@@ -187,7 +190,7 @@ OddsComparison
 
 - [ ] Add more sportsbooks (BetMGM, PointsBet)
 - [ ] Backtesting framework
-- [x] Web dashboard (NiceGUI — `gui/`)
+- [x] Web dashboard (NiceGUI — `src/frontend/gui/`)
 - [ ] Machine learning win probability model
 - [ ] Automated daily scraping schedule
 - [ ] Playwright network interception replacing Selenium
