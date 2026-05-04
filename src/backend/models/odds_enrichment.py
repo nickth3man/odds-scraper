@@ -20,13 +20,15 @@ def parse_american_odds(value: object) -> int | None:
         return None
 
 
-def format_ev_per_100(calculator: EVCalculator, moneyline: object, model_probability: float) -> str:
+def format_expected_value_per_100(
+    calculator: EVCalculator, moneyline: object, model_probability: float
+) -> str:
     """Compute the expected value per $100 staked for a single moneyline.
 
     Args:
         calculator: ``EVCalculator`` instance used for the computation.
         moneyline: Raw moneyline value (e.g. ``'-110'`` or ``'+150'``).
-    model_probability: Win probability from the model (0.0-1.0).
+        model_probability: Win probability from the model (0.0-1.0).
 
     Returns:
         A formatted dollar string such as ``'$5.00'``, or ``'N/A'`` when the
@@ -36,8 +38,10 @@ def format_ev_per_100(calculator: EVCalculator, moneyline: object, model_probabi
     if american_odds is None:
         return 'N/A'
 
-    ev = calculator.calculate_ev(model_probability, american_odds, stake=100)
-    return f'${ev:.2f}'
+    expected_value = calculator.calculate_expected_value(
+        model_probability, american_odds, stake=100
+    )
+    return f'${expected_value:.2f}'
 
 
 def enrich_live_odds_rows(
@@ -45,12 +49,12 @@ def enrich_live_odds_rows(
 ) -> list[dict]:
     """Convert raw scraper game mappings into display rows with EV enrichment.
 
-    Each row gets ``ev_per_100`` (away moneyline EV) and ``home_ev_per_100``
+    Each row gets ``expected_value_per_100`` (away moneyline expected value) and ``home_expected_value_per_100``
     (home moneyline EV) columns added.
 
     Args:
         games: Sequence of game dictionaries from a scraper.
-    model_probability: Win probability from the model (0.0-1.0).
+        model_probability: Win probability from the model (0.0-1.0).
 
     Returns:
         List of enriched row dictionaries ready for the odds table.
@@ -59,32 +63,36 @@ def enrich_live_odds_rows(
     rows: list[dict] = []
     for game in games:
         row = dict(game)
-        row['ev_per_100'] = format_ev_per_100(calculator, row.get('moneyline'), model_probability)
-        row['home_ev_per_100'] = format_ev_per_100(
+        row['expected_value_per_100'] = format_expected_value_per_100(
+            calculator, row.get('moneyline'), model_probability
+        )
+        row['home_expected_value_per_100'] = format_expected_value_per_100(
             calculator, row.get('home_moneyline'), model_probability
         )
         rows.append(row)
     return rows
 
 
-def recompute_ev(rows: list[dict], model_probability: float) -> list[dict]:
+def recompute_expected_value(rows: list[dict], model_probability: float) -> list[dict]:
     """Re-compute EV columns for existing table rows using a new probability.
 
     Args:
         rows: Current table rows (each must contain ``moneyline`` and
             ``home_moneyline`` keys).
-    model_probability: Updated win probability (0.0-1.0).
+        model_probability: Updated win probability (0.0-1.0).
 
     Returns:
-        New list of rows with refreshed ``ev_per_100`` and
-        ``home_ev_per_100`` values.
+        New list of rows with refreshed ``expected_value_per_100`` and
+        ``home_expected_value_per_100`` values.
     """
     calculator = EVCalculator()
     return [
         {
             **row,
-            'ev_per_100': format_ev_per_100(calculator, row.get('moneyline'), model_probability),
-            'home_ev_per_100': format_ev_per_100(
+            'expected_value_per_100': format_expected_value_per_100(
+                calculator, row.get('moneyline'), model_probability
+            ),
+            'home_expected_value_per_100': format_expected_value_per_100(
                 calculator, row.get('home_moneyline'), model_probability
             ),
         }
@@ -108,11 +116,11 @@ def merge_source_rows(
         existing_rows: Rows currently displayed in the odds table.
         games: Freshly scraped game dictionaries.
         source: Name of the sportsbook being refreshed (e.g. ``'ESPN'``).
-    model_probability: Win probability from the model (0.0-1.0).
+        model_probability: Win probability from the model (0.0-1.0).
 
     Returns:
         Merged list of rows ready for ``table.update_rows``.
     """
     rows_from_other_sources = [dict(row) for row in existing_rows if row.get('source') != source]
-    re_enriched = recompute_ev(rows_from_other_sources, model_probability)
+    re_enriched = recompute_expected_value(rows_from_other_sources, model_probability)
     return re_enriched + enrich_live_odds_rows(games, model_probability)

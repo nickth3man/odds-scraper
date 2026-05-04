@@ -2,10 +2,10 @@ class EVCalculator:
     """Calculate Expected Value for sports bets"""
 
     def __init__(self):
-        """Initialize EV calculator"""
+        """Initialize expected value calculator"""
         self.bets = []
 
-    def american_to_probability(self, american_odds: int | float) -> float:
+    def convert_american_to_probability(self, american_odds: int | float) -> float:
         """
         Convert American odds to implied probability
 
@@ -24,13 +24,13 @@ class EVCalculator:
 
         return probability
 
-    def calculate_ev(
+    def calculate_expected_value(
         self, model_probability: float, american_odds: int, stake: float = 100
     ) -> float:
         """
         Calculate Expected Value of a bet
 
-        EV = (Win Probability x Payout) - (Loss Probability x Stake)
+        Expected Value = (Win Probability x Payout) - (Loss Probability x Stake)
 
         Args:
             model_probability: Your predicted win probability (0.0 - 1.0)
@@ -46,12 +46,12 @@ class EVCalculator:
         else:
             payout = stake * (american_odds / 100)
 
-        # Calculate EV
+        # Calculate expected value
         win_value = model_probability * payout
         loss_value = (1 - model_probability) * stake
-        ev = win_value - loss_value
+        expected_value = win_value - loss_value
 
-        return ev
+        return expected_value
 
     def evaluate_bet(
         self, team: str, model_probability: float, american_odds: int, stake: float = 100
@@ -63,35 +63,35 @@ class EVCalculator:
         - Team
         - Model probability
         - Sportsbook implied probability
-        - EV and EV%
+        - Expected value and Expected value percentage
         - Recommendation
         """
-        sportsbook_probability = self.american_to_probability(american_odds)
-        ev = self.calculate_ev(model_probability, american_odds, stake)
-        ev_percent = (ev / stake) * 100
+        sportsbook_probability = self.convert_american_to_probability(american_odds)
+        expected_value = self.calculate_expected_value(model_probability, american_odds, stake)
+        expected_value_percent = (expected_value / stake) * 100
 
         # Determine recommendation
-        if ev > 0:
-            recommendation = '[BET] Positive EV'
-        elif ev < -5:
-            recommendation = '[AVOID] Strong Negative EV'
+        if expected_value > 0:
+            recommendation = '[BET] Positive Expected Value'
+        elif expected_value < -5:
+            recommendation = '[AVOID] Strong Negative Expected Value'
         else:
-            recommendation = '[PASS] Slight Negative EV'
+            recommendation = '[PASS] Slight Negative Expected Value'
 
         result = {
             'team': team,
             'model_probability': f'{model_probability * 100:.1f}%',
             'sportsbook_probability': f'{sportsbook_probability * 100:.1f}%',
             'american_odds': american_odds,
-            'ev_per_stake': f'${ev:.2f}',
-            'ev_percent': f'{ev_percent:.1f}%',
+            'expected_value_per_stake': f'${expected_value:.2f}',
+            'expected_value_percent': f'{expected_value_percent:.1f}%',
             'recommendation': recommendation,
         }
 
         self.bets.append(result)
         return result
 
-    def kelly_criterion(self, win_probability: float, american_odds: int) -> float:
+    def calculate_kelly_criterion(self, win_probability: float, american_odds: int) -> float:
         """
         Calculate optimal bet size using Kelly Criterion
 
@@ -119,6 +119,6 @@ class EVCalculator:
             print(f'  Model Probability:     {bet["model_probability"]}')
             print(f'  Sportsbook Probability: {bet["sportsbook_probability"]}')
             print(f'  Odds:                  {bet["american_odds"]}')
-            print(f'  EV per $100:           {bet["ev_per_stake"]}')
-            print(f'  EV Percentage:         {bet["ev_percent"]}')
+            print(f'  Expected Value per $100:  {bet["expected_value_per_stake"]}')
+            print(f'  Expected Value Percentage: {bet["expected_value_percent"]}')
             print(f'  Recommendation:        {bet["recommendation"]}\n')

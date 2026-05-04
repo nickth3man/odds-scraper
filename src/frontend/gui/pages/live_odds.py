@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from nicegui import APIRouter, run, ui
 
-from backend.models.odds_enrichment import merge_source_rows, recompute_ev
+from backend.models.odds_enrichment import merge_source_rows, recompute_expected_value
 from backend.scrapers import LiveOddsScraper
 from backend.scrapers.espn import EspnOddsScraper
 
@@ -15,8 +15,16 @@ COLUMNS = [
     {'name': 'moneyline', 'label': 'ML (Away)', 'field': 'moneyline'},
     {'name': 'home_moneyline', 'label': 'ML (Home)', 'field': 'home_moneyline'},
     {'name': 'over_under', 'label': 'O/U', 'field': 'over_under'},
-    {'name': 'ev_per_100', 'label': 'EV / $100 (Away)', 'field': 'ev_per_100'},
-    {'name': 'home_ev_per_100', 'label': 'EV / $100 (Home)', 'field': 'home_ev_per_100'},
+    {
+        'name': 'expected_value_per_100',
+        'label': 'EV / $100 (Away)',
+        'field': 'expected_value_per_100',
+    },
+    {
+        'name': 'home_expected_value_per_100',
+        'label': 'EV / $100 (Home)',
+        'field': 'home_expected_value_per_100',
+    },
     {'name': 'source', 'label': 'Source', 'field': 'source', 'sortable': True},
 ]
 
@@ -98,7 +106,7 @@ def live_odds() -> None:
 
         model_probability.on_value_change(
             lambda _e: (
-                table.update_rows(recompute_ev(table.rows, current_model_probability()))
+                table.update_rows(recompute_expected_value(table.rows, current_model_probability()))
                 if table.rows
                 else None
             )
