@@ -4,7 +4,7 @@ from pathlib import Path
 from backend.odds_scraping.draftkings_scraper import DraftKingsScraper
 from backend.odds_scraping.espn_scraper import EspnOddsScraper
 from backend.odds_scraping.live_odds_scraper import LiveOddsScraper
-from tests.selenium_fakes import FakeDriver, FakeWebElement
+from tests.browser_fakes import FakePage, FakeElement
 
 
 def _load_fixture(filename: str) -> dict:

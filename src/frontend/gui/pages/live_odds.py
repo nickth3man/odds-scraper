@@ -82,7 +82,7 @@ def live_odds() -> None:
         async def scrape_dk() -> None:
             """Scrape DraftKings odds and merge them into the live table."""
             dk_btn.disable()
-            status.text = 'Fetching DraftKings odds (Selenium)...'
+            status.text = 'Fetching DraftKings odds (Playwright)...'
             try:
                 live = LiveOddsScraper()
                 games = await run.io_bound(live.scrape_draftkings_odds)

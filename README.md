@@ -9,10 +9,10 @@ A Python project for scraping NBA odds from multiple sportsbooks and calculating
 
 - **NiceGUI Dashboard** — Browser-based GUI for live odds with always-on EV/100 analysis (`python -m frontend.gui.main`)
 - **Sample Odds Scraper** — Multi-sportsbook odds collection (ESPN, DraftKings, FanDuel)
-- **Live Odds Scraper** — Real-time scraping from ESPN's JSON API + DraftKings via Selenium
+- **Live Odds Scraper** — Real-time scraping from ESPN's JSON API + DraftKings via Playwright
 - **TLS Impersonation** — `curl_cffi` browser fingerprinting bypasses bot-detection on protected endpoints
 - **Fast JSON Parsing** — `orjson` replaces stdlib `json` for faster response deserialization
-- **HTML Parsing** — `parsel` CSS-selector parser extracts DraftKings odds without chained Selenium queries
+- **HTML Parsing** — `parsel` CSS-selector parser extracts DraftKings odds without chained DOM queries
 - **Unified Schema** — `OddsComparison` accepts output from both scrapers transparently
 - **Odds Comparison** — Find the best lines across sportsbooks with correct American odds logic
 - **Expected Value Calculator** — Identify profitable betting opportunities using American odds math
@@ -29,7 +29,7 @@ A Python project for scraping NBA odds from multiple sportsbooks and calculating
 | **ty**              | Fast type checker                                |
 | **pyright**         | Static type checker                              |
 | nicegui             | Browser-based GUI dashboard                      |
-| selenium            | Browser automation (DraftKings)                  |
+| playwright          | Browser automation (DraftKings)                  |
 | httpx               | Async-capable HTTP client with retry logic       |
 | curl-cffi           | TLS fingerprint impersonation (anti-bot bypass)  |
 | orjson              | Fast JSON serialization/deserialization          |
@@ -59,7 +59,7 @@ odds-scraper/
 │       │   ├── http_client.py           # Resilient HTTP client (retry, rate-limit, UA rotation)
 │       │   ├── parsers.py               # Shared odds parsing/formatting helpers
 │       │   ├── espn_scraper.py          # ESPN JSON API adapter + scoreboard fallback
-│       │   ├── draftkings_scraper.py    # DraftKings Selenium/parsel source adapter
+│       │   ├── draftkings_scraper.py    # DraftKings Playwright/parsel source adapter
 │       │   └── live_odds_scraper.py     # Thin live scraper orchestrator
 │       ├── models/
 │       │   └── ev_calculator.py         # Expected Value & Kelly Criterion
@@ -83,7 +83,7 @@ odds-scraper/
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) (package manager)
-- Chrome (for DraftKings live scraping — Selenium Manager auto-downloads ChromeDriver)
+- Chromium (Playwright auto-installs it via `playwright install chromium`)
 
 ### Setup
 
@@ -167,11 +167,11 @@ EspnOddsScraper
 └── parse_scoreboard_events()    normalize scoreboard API events
 
 DraftKingsScraper
-├── scrape_odds()                Selenium page load and browser lifecycle
+├── scrape_odds()                Playwright page load and browser lifecycle
 └── parse_games()                parser fallback chain
     ├── parse_html()             parsel path (fast, testable) ← preferred
-    ├── parse_cb_market()        Selenium cb-market path
-    └── parse_event_cells()      Selenium legacy fallback
+    ├── parse_cb_market()        Playwright cb-market path
+    └── parse_event_cells()      Playwright legacy fallback
 
 HttpClient
 ├── get()                        httpx + tenacity retry + per-domain rate limiting + UA rotation
@@ -183,7 +183,7 @@ OddsComparison
 
 ### External Data Caveats
 
-- **Sportsbook pages can change**: DraftKings selectors are parsed defensively with three fallback layers (parsel → cb-market Selenium → event-cell Selenium), but DOM changes or geo/bot gating can still hide odds
+- **Sportsbook pages can change**: DraftKings selectors are parsed defensively with three fallback layers (parsel → cb-market Playwright → event-cell Playwright), but DOM changes or geo/bot gating can still hide odds
 - **ESPN odds endpoints are unofficial**: The live scraper calls ESPN's header API first and falls back to the scoreboard API with the same normalized output schema; both endpoints can change without notice
 - **curl_cffi impersonation**: Effective against TLS fingerprint checks, not against login walls or account-based rate limits
 
@@ -194,7 +194,7 @@ OddsComparison
 - [x] Web dashboard with live EV/100 analysis (NiceGUI — `src/frontend/gui/`)
 - [ ] Machine learning win probability model
 - [ ] Automated daily scraping schedule
-- [ ] Playwright network interception replacing Selenium
+- [x] Playwright network interception  (migration from Selenium complete)
 
 ## ⚠️ Important Notes
 
