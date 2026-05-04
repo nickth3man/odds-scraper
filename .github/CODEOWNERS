@@ -1,7 +1,5 @@
 # Replace @nickth3man with a team when collaborators are added.
-* @nickth3man
-
-.github/ @nickth3man
-src/backend/ @nickth3man
-src/frontend/ @nickth3man
-tests/ @nickth3man
+/.github/ @nickth3man
+/src/backend/ @nickth3man
+/src/frontend/ @nickth3man
+/tests/ @nickth3man
