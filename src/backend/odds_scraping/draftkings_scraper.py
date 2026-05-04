@@ -343,102 +343,35 @@ class DraftKingsScraper:
             if pw:
                 self._cleanup(pw)
 
-    def parse_games(self, driver) -> list[GameOdds]:
-        """Parse games from DraftKings page using Selenium.
+    def parse_games(self, page) -> list[GameOdds]:
+        """Parse games from DraftKings page using Playwright.
 
-        When parsel is available, HTML is extracted once from the driver and
-        parsed with CSS selectors — no repeated Selenium element queries.
-        The Selenium paths remain as a fallback.
+        When parsel is available, HTML is extracted once from the page and
+        parsed with CSS selectors — no repeated element queries.
+        The Playwright paths remain as a fallback.
         """
-        if _PARSEL_AVAILABLE and _HtmlSelector is not None and hasattr(driver, 'page_source'):
-            html = driver.page_source
+        if _PARSEL_AVAILABLE and _HtmlSelector is not None:
+            html = page.content()
             games = self.parse_html(html)
             if games:
                 return games
 
         # Try new cb-market structure first (component-builder layout)
-        games = self.parse_cb_market(driver)
+        games = self.parse_cb_market(page)
         if games:
             return games
 
         # Fallback to old event-cell structure
-        return self.parse_event_cells(driver)
+        return self.parse_event_cells(page)
 
-    @staticmethod
-    def parse_html(html: str) -> list[GameOdds]:
-        """Parse DraftKings NBA page HTML using parsel CSS selectors.
-
-        Accepts raw HTML string (e.g. from ``driver.page_source``) and returns
-        a list of game dicts with the same schema as the Selenium paths.
-        Returns an empty list when parsel is not installed.
-        """
-        if not _PARSEL_AVAILABLE or _HtmlSelector is None:
-            return []
-
-        sel = _HtmlSelector(text=html)
-        games = []
-
-        for template in sel.css(
-            "[class*='cb-market__template--2-columns'], [class*='cb-market__template--4-columns']"
-        ):
-            try:
-                # Team names
-                team_labels = template.css(
-                    "[class*='cb-market__label-inner--parlay']::text"
-                ).getall()
-                if len(team_labels) < 2:
-                    continue
-                away_team, home_team = team_labels[0].strip(), team_labels[1].strip()
-
-                def _get_btn(sel_scope, testid_fragment: str, attr: str) -> str:
-                    return (
-                        sel_scope.css(
-                            f"button[data-testid*='{testid_fragment}'] [data-testid='{attr}']::text"
-                        ).get()
-                        or 'N/A'
-                    ).strip() or 'N/A'
-
-                away_spread = _get_btn(template, '0HC', 'button-points-market-board')
-                ml_values = [
-                    v.strip()
-                    for v in template.css(
-                        "button[data-testid*='0ML'] [data-testid='button-odds-market-board']::text"
-                    ).getall()
-                    if v and v.strip()
-                ]
-                away_ml = ml_values[0] if ml_values else 'N/A'
-                home_ml = ml_values[1] if len(ml_values) > 1 else 'N/A'
-                ou_title = _get_btn(template, '0OU', 'button-title-market-board')
-                ou_points = _get_btn(template, '0OU', 'button-points-market-board')
-                over_total = ou_points if ou_title.upper() == 'O' else 'N/A'
-
-                games.append(
-                    {
-                        'date': datetime.now().strftime('%Y-%m-%d'),
-                        'home_team': home_team,
-                        'away_team': away_team,
-                        'matchup': f'{away_team} @ {home_team}',
-                        'spread': away_spread,
-                        'moneyline': away_ml,
-                        'home_moneyline': home_ml,
-                        'over_under': over_total,
-                        'source': 'DraftKings',
-                    }
-                )
-            except (AttributeError, ValueError, IndexError):
-                continue
-
-        return games
-
-    def parse_cb_market(self, driver) -> list[GameOdds]:
+    def parse_cb_market(self, page) -> list[GameOdds]:
         """Parse DraftKings games using cb-market__template structure."""
         games = []
 
         try:
             # Find game templates — DraftKings uses both 2-column and 4-column layouts
-            templates = driver.find_elements(
-                By.CSS_SELECTOR,
-                "[class*='cb-market__template--2-columns'], [class*='cb-market__template--4-columns']",
+            templates = page.query_selector_all(
+                "[class*='cb-market__template--2-columns'], [class*='cb-market__template--4-columns']"
             )
 
             if not templates:
@@ -447,22 +380,22 @@ class DraftKingsScraper:
             for template in templates:
                 try:
                     # Team names are in cb-market__label-inner--parlay elements
-                    team_elems = template.find_elements(
-                        By.CSS_SELECTOR, "[class*='cb-market__label-inner--parlay']"
+                    team_elems = template.query_selector_all(
+                        "[class*='cb-market__label-inner--parlay']"
                     )
 
                     if len(team_elems) < 2:
                         continue
 
-                    away_team = team_elems[0].text.strip()
-                    home_team = team_elems[1].text.strip()
+                    away_team = team_elems[0].inner_text().strip()
+                    home_team = team_elems[1].inner_text().strip()
 
                     if not away_team or not home_team:
                         continue
 
                     # Find all market buttons in this template
-                    buttons = template.find_elements(
-                        By.CSS_SELECTOR, "button[data-testid*='component-builder-market-button']"
+                    buttons = template.query_selector_all(
+                        "button[data-testid*='component-builder-market-button']"
                     )
 
                     away_spread = 'N/A'
@@ -475,34 +408,34 @@ class DraftKingsScraper:
                             testid = button.get_attribute('data-testid') or ''
 
                             if '0HC' in testid:
-                                points_elem = button.find_element(
-                                    By.CSS_SELECTOR, "[data-testid='button-points-market-board']"
+                                points_elem = button.query_selector(
+                                    "[data-testid='button-points-market-board']"
                                 )
-                                points = points_elem.text.strip() if points_elem else ''
+                                points = points_elem.inner_text().strip() if points_elem else ''
                                 if away_spread == 'N/A':
                                     away_spread = points
                             elif '0OU' in testid:
-                                title_elem = button.find_element(
-                                    By.CSS_SELECTOR, "[data-testid='button-title-market-board']"
+                                title_elem = button.query_selector(
+                                    "[data-testid='button-title-market-board']"
                                 )
-                                title = title_elem.text.strip() if title_elem else ''
-                                points_elem = button.find_element(
-                                    By.CSS_SELECTOR, "[data-testid='button-points-market-board']"
+                                title = title_elem.inner_text().strip() if title_elem else ''
+                                points_elem = button.query_selector(
+                                    "[data-testid='button-points-market-board']"
                                 )
-                                points = points_elem.text.strip() if points_elem else ''
+                                points = points_elem.inner_text().strip() if points_elem else ''
                                 if over_total == 'N/A' and title.upper() == 'O':
                                     over_total = points
                             elif '0ML' in testid:
-                                odds_elem = button.find_element(
-                                    By.CSS_SELECTOR, "[data-testid='button-odds-market-board']"
+                                odds_elem = button.query_selector(
+                                    "[data-testid='button-odds-market-board']"
                                 )
-                                odds = odds_elem.text.strip() if odds_elem else ''
+                                odds = odds_elem.inner_text().strip() if odds_elem else ''
                                 if away_ml == 'N/A':
                                     away_ml = odds
                                 elif home_ml == 'N/A':
                                     home_ml = odds
 
-                        except (AttributeError, ValueError, NoSuchElementException):
+                        except (AttributeError, ValueError):
                             continue
 
                     games.append(
