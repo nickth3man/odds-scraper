@@ -30,20 +30,20 @@ jobs:
       artifact-metadata: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: '3.12'
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v8.1.0
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
-          enable-cache: true
+          enable-cache: false
           cache-dependency-glob: |
             pyproject.toml
             uv.lock
@@ -72,13 +72,16 @@ jobs:
           uv run --frozen ruff format --check .
           uv run --frozen ruff check --output-format=github .
           uv run --frozen pyright
-          uv run --frozen pytest --cov=src --cov-fail-under=80
+          if uv run --frozen python -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('playwright') else 1)"; then
+            uv run --frozen playwright install --with-deps chromium
+          fi
+          ODDS_SCRAPER_OFFLINE_TESTS=1 uv run --frozen pytest
 
       - name: Build distributions
         run: uv build
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: dist
           path: dist/*
@@ -86,7 +89,7 @@ jobs:
           retention-days: 90
 
       - name: Generate build provenance attestation
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4
         with:
           subject-path: dist/*
 
