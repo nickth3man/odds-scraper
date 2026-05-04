@@ -1,5 +1,7 @@
 """Unit tests for EVCalculator — expected value, Kelly criterion, and bet evaluation."""
 
+from typing import cast
+
 import pytest
 
 from backend.models.ev_calculator import EVCalculator
@@ -34,6 +36,13 @@ def test_american_to_probability_extreme():
     calc = EVCalculator()
     assert calc.american_to_probability(10000) == pytest.approx(100 / 10100)
     assert calc.american_to_probability(-10000) == pytest.approx(10000 / 10100)
+
+
+def test_american_to_probability_requires_numeric_input():
+    calc = EVCalculator()
+
+    with pytest.raises(TypeError, match='american_odds must be numeric'):
+        calc.american_to_probability(cast(int, 'bad'))
 
 
 # ---------------------------------------------------------------------------
@@ -200,3 +209,26 @@ def test_kelly_criterion_negative_expected_value():
     # win_prob=0.30, odds=-110 → negative EV, Kelly should be 0
     kelly = calc.kelly_criterion(win_probability=0.30, american_odds=-110)
     assert kelly == 0.0
+
+
+def test_display_bet_analysis_prints_formatted_rows(capsys):
+    calc = EVCalculator()
+
+    calc.display_bet_analysis(
+        [
+            {
+                'team': 'OKC Thunder',
+                'model_prob': '60.0%',
+                'book_prob': '52.4%',
+                'american_odds': -110,
+                'ev_per_stake': '$14.55',
+                'ev_percent': '14.5%',
+                'recommendation': '[BET] Positive EV',
+            }
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert 'BET ANALYSIS' in output
+    assert 'TEAM: OKC Thunder' in output
+    assert 'Recommendation:        [BET] Positive EV' in output

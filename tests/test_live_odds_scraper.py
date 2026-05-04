@@ -38,6 +38,71 @@ def test_get_all_games_resets_previous_results(monkeypatch):
     assert scraper.get_all_games() == [game]
 
 
+def test_scrape_draftkings_odds_appends_games(monkeypatch):
+    scraper = LiveOddsScraper()
+    games = [{'matchup': 'OKC Thunder @ Boston Celtics'}]
+    monkeypatch.setattr(scraper._dk, 'scrape_odds', lambda: games)
+
+    assert scraper.scrape_draftkings_odds() == games
+    assert scraper.all_games == games
+
+
+def test_scrape_draftkings_odds_skips_empty_results(monkeypatch):
+    scraper = LiveOddsScraper()
+    monkeypatch.setattr(scraper._dk, 'scrape_odds', lambda: [])
+
+    assert scraper.scrape_draftkings_odds() == []
+    assert scraper.all_games == []
+
+
+def test_parse_draftkings_html_delegates_to_scraper(monkeypatch):
+    monkeypatch.setattr(
+        DraftKingsScraper, 'parse_html', staticmethod(lambda html: [{'html': html}])
+    )
+
+    assert LiveOddsScraper.parse_draftkings_html('<html></html>') == [{'html': '<html></html>'}]
+
+
+def test_export_to_csv_returns_none_when_no_games(capsys):
+    scraper = LiveOddsScraper()
+
+    assert scraper.export_to_csv([]) is None
+    assert 'No games to export' in capsys.readouterr().out
+
+
+def test_export_to_csv_writes_dataframe(tmp_path, capsys):
+    scraper = LiveOddsScraper()
+    games = [{'matchup': 'OKC Thunder @ Boston Celtics', 'moneyline': '-135'}]
+    output = tmp_path / 'live-odds.csv'
+
+    frame = scraper.export_to_csv(games, filename=str(output))
+
+    assert frame is not None
+    assert output.exists()
+    printed = capsys.readouterr().out
+    assert '[OK] Live odds exported to' in printed
+    assert 'Total games: 1' in printed
+
+
+def test_display_games_formats_table(capsys):
+    scraper = LiveOddsScraper()
+    games = [{'matchup': 'OKC Thunder @ Boston Celtics', 'moneyline': '-135'}]
+
+    scraper.display_games(games, source='ESPN')
+
+    output = capsys.readouterr().out
+    assert 'LIVE ESPN GAMES' in output
+    assert 'OKC Thunder @ Boston Celtics' in output
+
+
+def test_display_games_skips_empty_input(capsys):
+    scraper = LiveOddsScraper()
+
+    scraper.display_games([], source='ESPN')
+
+    assert capsys.readouterr().out == ''
+
+
 def test_parse_draftkings_games_extracts_spread_moneyline_and_total():
     outcome_cells = [
         FakeElement(
@@ -227,6 +292,113 @@ def test_select_scoreboard_odds_falls_back_to_first():
     selected = scraper.select_scoreboard_odds(odds_list)
     assert selected is not None
     assert selected['id'] == '1'
+
+
+def test_scrape_espn_nba_odds_returns_empty_when_header_api_has_no_games(monkeypatch, capsys):
+    scraper = EspnOddsScraper()
+    monkeypatch.setattr(
+        scraper._http,
+        'get',
+        lambda *_args, **_kwargs: type('Resp', (), {'json': lambda self: {'sports': []}})(),
+    )
+
+    assert scraper.scrape_nba_odds() == []
+    assert '[WARN] ESPN: No upcoming games found' in capsys.readouterr().out
+
+
+def test_parse_header_events_skips_invalid_entries_and_logs_warning(caplog):
+    scraper = EspnOddsScraper()
+    events = [
+        {'competitors': []},
+        {
+            'odds': {'spread': -2.5},
+            'competitors': [{'homeAway': 'home', 'displayName': 'Boston Celtics'}],
+        },
+        {
+            'odds': {'spread': -2.5},
+            'competitors': [
+                {'homeAway': 'neutral', 'displayName': 'Boston Celtics'},
+                {'homeAway': 'away', 'displayName': 'OKC Thunder'},
+            ],
+        },
+        {
+            'odds': 'bad',
+            'competitors': [
+                {'homeAway': 'home', 'displayName': 'Boston Celtics'},
+                {'homeAway': 'away', 'displayName': 'OKC Thunder'},
+            ],
+        },
+    ]
+
+    with caplog.at_level('WARNING'):
+        assert scraper.parse_header_events(events) == []
+
+    assert 'Failed to parse ESPN event' in caplog.text
+
+
+def test_scrape_scoreboard_fallback_returns_empty_on_fetch_error(monkeypatch, capsys):
+    scraper = EspnOddsScraper()
+    monkeypatch.setattr(
+        scraper._http,
+        'get',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError('bad payload')),
+    )
+
+    assert scraper.scrape_scoreboard_fallback() == []
+    assert '[ERROR] ESPN Error: bad payload' in capsys.readouterr().out
+
+
+def test_scrape_scoreboard_fallback_returns_empty_when_no_games(monkeypatch, capsys):
+    scraper = EspnOddsScraper()
+    monkeypatch.setattr(
+        scraper._http,
+        'get',
+        lambda *_args, **_kwargs: type('Resp', (), {'json': lambda self: {'events': []}})(),
+    )
+
+    assert scraper.scrape_scoreboard_fallback() == []
+    assert '[WARN] ESPN fallback: No upcoming games found' in capsys.readouterr().out
+
+
+def test_parse_scoreboard_events_skips_invalid_entries_and_logs_warning(caplog):
+    scraper = EspnOddsScraper()
+    events = [
+        {
+            'competitions': [
+                {
+                    'competitors': [{'homeAway': 'away', 'team': {'displayName': 'OKC Thunder'}}],
+                    'odds': [{}],
+                }
+            ]
+        },
+        {
+            'competitions': [
+                {
+                    'competitors': [
+                        {'homeAway': 'away', 'team': {'displayName': 'OKC Thunder'}},
+                        {'homeAway': 'home', 'team': {'displayName': 'Boston Celtics'}},
+                    ],
+                    'odds': [],
+                }
+            ]
+        },
+        {
+            'competitions': [
+                {
+                    'competitors': [
+                        {'homeAway': 'away', 'team': {'displayName': 'OKC Thunder'}},
+                        {'homeAway': 'home', 'team': {'displayName': 'Boston Celtics'}},
+                    ],
+                    'odds': [{'moneyline': 'bad'}],
+                }
+            ]
+        },
+    ]
+
+    with caplog.at_level('WARNING'):
+        assert scraper.parse_scoreboard_events(events) == []
+
+    assert 'Failed to parse ESPN scoreboard event' in caplog.text
 
 
 # ============ cb-market (component-builder) structure tests ============
