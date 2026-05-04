@@ -217,6 +217,7 @@ class _ByFallback:
 By = _ByFallback
 
 try:
+    from selenium.common.exceptions import NoSuchElementException
     from selenium.webdriver.common.by import By
 
     SELENIUM_AVAILABLE = True
@@ -423,7 +424,15 @@ class DraftKingsScraper:
                     ).strip() or 'N/A'
 
                 away_spread = _get_btn(template, '0HC', 'button-points-market-board')
-                away_ml = _get_btn(template, '0ML', 'button-odds-market-board')
+                ml_values = [
+                    v.strip()
+                    for v in template.css(
+                        "button[data-testid*='0ML'] [data-testid='button-odds-market-board']::text"
+                    ).getall()
+                    if v and v.strip()
+                ]
+                away_ml = ml_values[0] if ml_values else 'N/A'
+                home_ml = ml_values[1] if len(ml_values) > 1 else 'N/A'
                 ou_title = _get_btn(template, '0OU', 'button-title-market-board')
                 ou_points = _get_btn(template, '0OU', 'button-points-market-board')
                 over_total = ou_points if ou_title.upper() == 'O' else 'N/A'
@@ -436,7 +445,7 @@ class DraftKingsScraper:
                         'matchup': f'{away_team} @ {home_team}',
                         'spread': away_spread,
                         'moneyline': away_ml,
-                        'home_moneyline': 'N/A',
+                        'home_moneyline': home_ml,
                         'over_under': over_total,
                         'source': 'DraftKings',
                     }
@@ -489,34 +498,36 @@ class DraftKingsScraper:
                     for button in buttons:
                         try:
                             testid = button.get_attribute('data-testid') or ''
-                            points_elem = button.find_element(
-                                By.CSS_SELECTOR, "[data-testid='button-points-market-board']"
-                            )
-                            points = points_elem.text.strip() if points_elem else ''
-
-                            odds_elem = button.find_element(
-                                By.CSS_SELECTOR, "[data-testid='button-odds-market-board']"
-                            )
-                            odds = odds_elem.text.strip() if odds_elem else ''
-
-                            title_elem = button.find_element(
-                                By.CSS_SELECTOR, "[data-testid='button-title-market-board']"
-                            )
-                            title = title_elem.text.strip() if title_elem else ''
 
                             if '0HC' in testid:
+                                points_elem = button.find_element(
+                                    By.CSS_SELECTOR, "[data-testid='button-points-market-board']"
+                                )
+                                points = points_elem.text.strip() if points_elem else ''
                                 if away_spread == 'N/A':
                                     away_spread = points
                             elif '0OU' in testid:
+                                title_elem = button.find_element(
+                                    By.CSS_SELECTOR, "[data-testid='button-title-market-board']"
+                                )
+                                title = title_elem.text.strip() if title_elem else ''
+                                points_elem = button.find_element(
+                                    By.CSS_SELECTOR, "[data-testid='button-points-market-board']"
+                                )
+                                points = points_elem.text.strip() if points_elem else ''
                                 if over_total == 'N/A' and title.upper() == 'O':
                                     over_total = points
                             elif '0ML' in testid:
+                                odds_elem = button.find_element(
+                                    By.CSS_SELECTOR, "[data-testid='button-odds-market-board']"
+                                )
+                                odds = odds_elem.text.strip() if odds_elem else ''
                                 if away_ml == 'N/A':
                                     away_ml = odds
                                 elif home_ml == 'N/A':
                                     home_ml = odds
 
-                        except (AttributeError, ValueError):
+                        except (AttributeError, ValueError, NoSuchElementException):
                             continue
 
                     games.append(

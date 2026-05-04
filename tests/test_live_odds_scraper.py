@@ -1,11 +1,10 @@
 import json
 from pathlib import Path
 
-from conftest import FakeDriver, FakeWebElement
-
 from backend.odds_scraping.draftkings_scraper import DraftKingsScraper
 from backend.odds_scraping.espn_scraper import EspnOddsScraper
 from backend.odds_scraping.live_odds_scraper import LiveOddsScraper
+from tests.selenium_fakes import FakeDriver, FakeWebElement
 
 
 def _load_fixture(filename: str) -> dict:
