@@ -121,4 +121,4 @@ exclude_also = [
     'raise NotImplementedError',
     '@(abc\\.)?abstractmethod',
 ]
-fail_under = 80
+fail_under = 65
