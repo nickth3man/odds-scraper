@@ -1,7 +1,7 @@
 from nicegui import APIRouter, run, ui
 
-from odds_scraping.espn_scraper import EspnOddsScraper
-from odds_scraping.live_odds_scraper import LiveOddsScraper
+from backend.odds_scraping.espn_scraper import EspnOddsScraper
+from backend.odds_scraping.live_odds_scraper import LiveOddsScraper
 
 router = APIRouter()
 
@@ -42,7 +42,7 @@ def live_odds() -> None:
             scraper = EspnOddsScraper()
             games = await run.io_bound(scraper.scrape_nba_odds)
             existing = [r for r in table.rows if r.get('source') != 'ESPN']
-            table.rows[:] = existing + games
+            table.rows[:] = existing + [dict(game) for game in games]
             table.update()
             status.text = f'Loaded {len(games)} ESPN games.'
             espn_btn.enable()
@@ -53,7 +53,7 @@ def live_odds() -> None:
             live = LiveOddsScraper()
             games = await run.io_bound(live.scrape_draftkings_odds)
             existing = [r for r in table.rows if r.get('source') != 'DraftKings']
-            table.rows[:] = existing + games
+            table.rows[:] = existing + [dict(game) for game in games]
             table.update()
             status.text = f'Loaded {len(games)} DraftKings games.'
             dk_btn.enable()
