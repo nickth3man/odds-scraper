@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+
 from nicegui import APIRouter, run, ui
 
 from backend.models.ev_calculator import EVCalculator
@@ -42,7 +46,9 @@ def _format_ev_per_100(
     return f'${ev:.2f}'
 
 
-def enrich_live_odds_rows(games: list[dict], model_probability: float) -> list[dict]:
+def enrich_live_odds_rows(
+    games: Sequence[Mapping[str, object]], model_probability: float
+) -> list[dict]:
     calculator = EVCalculator()
     rows = []
     for game in games:
@@ -64,7 +70,10 @@ def _recompute_ev(rows: list[dict], model_probability: float) -> list[dict]:
 
 
 def merge_source_rows(
-    existing_rows: list[dict], games: list[dict], source: str, model_probability: float
+    existing_rows: list[dict],
+    games: Sequence[Mapping[str, object]],
+    source: str,
+    model_probability: float,
 ) -> list[dict]:
     rows_from_other_sources = [dict(row) for row in existing_rows if row.get('source') != source]
     re_enriched = _recompute_ev(rows_from_other_sources, model_probability)
