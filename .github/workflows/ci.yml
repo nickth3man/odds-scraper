@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v8
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -29,43 +29,36 @@ jobs:
       - run: uv sync --frozen
 
       - name: Ruff lint
-        run: uv run ruff check --output-format=github .
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: "check"
 
       - name: Ruff format check
-        run: uv run ruff format --check .
-
-  # ── Fast type check (ty) — non-blocking while tool is experimental ──
-  typecheck-ty:
-    name: Type Check (ty) ⚡
-    needs: quality
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v4
+        uses: astral-sh/ruff-action@v3
         with:
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
+          args: "format --check"
 
-      - run: uv sync --frozen
-      - run: uv run ty check
-
-  # ── Thorough type check (pyright) ──────────────────────────
-  typecheck-pyright:
-    name: Type Check (pyright)
+  # ── Type checks (ty + pyright) ─────────────────────────────
+  typecheck:
+    name: Type Check
     needs: quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v8
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
       - run: uv sync --frozen
-      - run: uv run pyright
+
+      - name: Ty (fast, experimental)
+        continue-on-error: true
+        run: uv run ty check
+
+      - name: Pyright
+        run: uv run pyright
 
   # ── Security audit ─────────────────────────────────────────
   security:
@@ -75,7 +68,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v8
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -104,7 +97,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v8
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -118,9 +111,15 @@ jobs:
             --cov-report=term-missing \
             --cov-report=xml \
             --cov-report=html \
-            --cov-fail-under=60 \
+            --cov-fail-under=80 \
+            --junitxml=test-results.xml \
             -q
 
+      - name: Surface test results
+        if: always()
+        uses: pmeier/pytest-results-action@v0.7.2
+        with:
+          path: test-results.xml
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -130,3 +129,27 @@ jobs:
             coverage.xml
             htmlcov/
           include-hidden-files: true
+
+  # ── CI status summary (required branch protection gate) ────
+  ci-status:
+    name: CI Status
+    if: always()
+    needs: [quality, typecheck, security, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [[ "${{ needs.quality.result }}" == "success" && \
+                "${{ needs.typecheck.result }}" == "success" && \
+                "${{ needs.security.result }}" == "success" && \
+                "${{ needs.test.result }}" == "success" ]]; then
+            echo "All CI jobs passed ✅"
+            exit 0
+          else
+            echo "One or more CI jobs failed ❌"
+            echo "quality: ${{ needs.quality.result }}"
+            echo "typecheck: ${{ needs.typecheck.result }}"
+            echo "security: ${{ needs.security.result }}"
+            echo "test: ${{ needs.test.result }}"
+            exit 1
+          fi

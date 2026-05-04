@@ -3,6 +3,7 @@
 A Python project for scraping NBA odds from multiple sportsbooks and calculating expected value for sports bets.
 
 [![CI](https://github.com/nickth3man/odds-scraper/actions/workflows/ci.yml/badge.svg)](https://github.com/nickth3man/odds-scraper/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-80%25-brightgreen)](https://github.com/nickth3man/odds-scraper/actions/workflows/ci.yml)
 
 ## 📊 Features
 
