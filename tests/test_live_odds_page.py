@@ -1,0 +1,82 @@
+from frontend.gui.pages.live_odds import SOURCE_BADGE_SLOT, enrich_live_odds_rows, merge_source_rows
+
+
+def test_source_badge_slot_uses_valid_quasar_table_cell_template():
+    assert '<q-td :props="props">' in SOURCE_BADGE_SLOT
+    assert "props.value === 'ESPN' ? 'red' : 'blue'" in SOURCE_BADGE_SLOT
+    assert '\\' not in SOURCE_BADGE_SLOT
+
+
+def test_enrich_live_odds_rows_adds_ev_per_100_from_away_moneyline():
+    [row] = enrich_live_odds_rows(
+        [
+            {
+                'date': '2026-04-30',
+                'home_team': 'Boston Celtics',
+                'away_team': 'OKC Thunder',
+                'matchup': 'OKC Thunder @ Boston Celtics',
+                'spread': '-2.5',
+                'moneyline': '-110',
+                'home_moneyline': '+120',
+                'over_under': '223.5',
+                'source': 'ESPN',
+            }
+        ],
+        model_probability=0.55,
+    )
+
+    assert row['ev_per_100'] == '$5.00'
+
+
+def test_enrich_live_odds_rows_marks_unusable_moneyline_as_not_available():
+    [row] = enrich_live_odds_rows(
+        [
+            {
+                'date': '2026-04-30',
+                'home_team': 'Boston Celtics',
+                'away_team': 'OKC Thunder',
+                'matchup': 'OKC Thunder @ Boston Celtics',
+                'spread': '-2.5',
+                'moneyline': 'N/A',
+                'home_moneyline': '+120',
+                'over_under': '223.5',
+                'source': 'ESPN',
+            }
+        ],
+        model_probability=0.55,
+    )
+
+    assert row['ev_per_100'] == 'N/A'
+
+
+def test_merge_source_rows_replaces_only_refreshed_sportsbook_rows():
+    existing_rows = [
+        {'matchup': 'Old ESPN Game', 'source': 'ESPN', 'moneyline': '-110', 'ev_per_100': '$5.00'},
+        {
+            'matchup': 'DraftKings Game',
+            'source': 'DraftKings',
+            'moneyline': '+150',
+            'ev_per_100': '$0.00',
+        },
+    ]
+    new_espn_games = [
+        {
+            'date': '2026-04-30',
+            'home_team': 'Boston Celtics',
+            'away_team': 'OKC Thunder',
+            'matchup': 'OKC Thunder @ Boston Celtics',
+            'spread': '-2.5',
+            'moneyline': '-110',
+            'home_moneyline': '+120',
+            'over_under': '223.5',
+            'source': 'ESPN',
+        }
+    ]
+
+    rows = merge_source_rows(existing_rows, new_espn_games, 'ESPN', model_probability=0.55)
+
+    assert [row['matchup'] for row in rows] == [
+        'DraftKings Game',
+        'OKC Thunder @ Boston Celtics',
+    ]
+    assert rows[1]['ev_per_100'] == '$5.00'
