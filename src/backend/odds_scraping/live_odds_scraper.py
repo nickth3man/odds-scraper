@@ -5,6 +5,7 @@ import pandas as pd
 from .draftkings_scraper import DraftKingsScraper
 from .espn_scraper import EspnOddsScraper
 from .http_client import HttpClient
+from .parsers import GameOdds
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ class LiveOddsScraper:
         return games
 
     @staticmethod
-    def parse_draftkings_html(html: str) -> list[dict]:
+    def parse_draftkings_html(html: str) -> list[GameOdds]:
         """Compatibility wrapper for offline HTML parsing.
 
         Delegates to DraftKingsScraper.parse_html for consumers that still
