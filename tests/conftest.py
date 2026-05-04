@@ -2,4 +2,4 @@
 
 from __future__ import annotations
 
-from tests.browser_fakes import FakePage, FakeElement  # noqa: F401
+from tests.browser_fakes import FakeElement, FakePage  # noqa: F401

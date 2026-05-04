@@ -2,6 +2,7 @@
 
 These are NOT pytest fixtures. Use them directly when constructing test data.
 """
+
 from __future__ import annotations
 
 import re

@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from playwright.sync_api import sync_playwright, Page, ElementHandle, TimeoutError as PlaywrightTimeoutError
-from playwright_stealth import stealth_sync
-
 # =============================================================================
 # DRAFTKINGS NBA BETTING CATEGORIES — TO BE SCRAPED
 # =============================================================================
@@ -195,6 +192,10 @@ import re
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright
+from playwright_stealth import Stealth
+
 from .config import DK_BASE_URL, DK_FUTURES_CHAMPION_URL
 from .parsers import GameOdds, first_american_odds, first_signed_number, first_total
 
@@ -242,7 +243,7 @@ class DraftKingsScraper:
             "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
         )
         page = context.new_page()
-        stealth_sync(page)
+        Stealth().apply_stealth_sync(page)
         return pw, page
 
     @staticmethod
@@ -364,6 +365,72 @@ class DraftKingsScraper:
         # Fallback to old event-cell structure
         return self.parse_event_cells(page)
 
+    @staticmethod
+    def parse_html(html: str) -> list[GameOdds]:
+        """Parse DraftKings NBA page HTML using parsel CSS selectors.
+
+        Accepts raw HTML string (e.g. from page.content()) and returns
+        a list of game dicts with the same schema as the Playwright paths.
+        Returns an empty list when parsel is not installed.
+        """
+        if not _PARSEL_AVAILABLE or _HtmlSelector is None:
+            return []
+
+        sel = _HtmlSelector(text=html)
+        games = []
+
+        for template in sel.css(
+            "[class*='cb-market__template--2-columns'], [class*='cb-market__template--4-columns']"
+        ):
+            try:
+                # Team names
+                team_labels = template.css(
+                    "[class*='cb-market__label-inner--parlay']::text"
+                ).getall()
+                if len(team_labels) < 2:
+                    continue
+                away_team, home_team = team_labels[0].strip(), team_labels[1].strip()
+
+                def _get_btn(sel_scope, testid_fragment: str, attr: str) -> str:
+                    return (
+                        sel_scope.css(
+                            f"button[data-testid*='{testid_fragment}'] [data-testid='{attr}']::text"
+                        ).get()
+                        or 'N/A'
+                    ).strip() or 'N/A'
+
+                away_spread = _get_btn(template, '0HC', 'button-points-market-board')
+                ml_values = [
+                    v.strip()
+                    for v in template.css(
+                        "button[data-testid*='0ML'] [data-testid='button-odds-market-board']::text"
+                    ).getall()
+                    if v and v.strip()
+                ]
+                away_ml = ml_values[0] if ml_values else 'N/A'
+                home_ml = ml_values[1] if len(ml_values) > 1 else 'N/A'
+                ou_title = _get_btn(template, '0OU', 'button-title-market-board')
+                ou_points = _get_btn(template, '0OU', 'button-points-market-board')
+                over_total = ou_points if ou_title.upper() == 'O' else 'N/A'
+
+                games.append(
+                    {
+                        'date': datetime.now().strftime('%Y-%m-%d'),
+                        'home_team': home_team,
+                        'away_team': away_team,
+                        'matchup': f'{away_team} @ {home_team}',
+                        'spread': away_spread,
+                        'moneyline': away_ml,
+                        'home_moneyline': home_ml,
+                        'over_under': over_total,
+                        'source': 'DraftKings',
+                    }
+                )
+            except (AttributeError, ValueError, IndexError):
+                continue
+
+        return games
+
     def parse_cb_market(self, page) -> list[GameOdds]:
         """Parse DraftKings games using cb-market__template structure."""
         games = []
@@ -468,15 +535,11 @@ class DraftKingsScraper:
 
         try:
             # Team name elements — DraftKings uses event-cell__name-text (stable partial class)
-            team_elements = page.query_selector_all(
-                "[class*='event-cell__name-text']"
-            )
+            team_elements = page.query_selector_all("[class*='event-cell__name-text']")
 
             if not team_elements:
                 # Fallback: try broader event-cell selector
-                team_elements = page.query_selector_all(
-                    "[class*='event-cell__team']"
-                )
+                team_elements = page.query_selector_all("[class*='event-cell__team']")
 
             if not team_elements:
                 logger.warning('DraftKings: no team elements found — selectors may be stale')
@@ -497,11 +560,15 @@ class DraftKingsScraper:
                     ou = 'N/A'
 
                     # Find outcome cells near these team elements
-                    game_block = team_elements[i].query_selector(
-                        "xpath=ancestor::*[contains(@class,'sportsbook-table__body') or "
-                        "contains(@class,'event-cell') or "
-                        "contains(@class,'sportsbook-event-accordion')]"
-                    ) if team_elements else None
+                    game_block = (
+                        team_elements[i].query_selector(
+                            "xpath=ancestor::*[contains(@class,'sportsbook-table__body') or "
+                            "contains(@class,'event-cell') or "
+                            "contains(@class,'sportsbook-event-accordion')]"
+                        )
+                        if team_elements
+                        else None
+                    )
 
                     if game_block:
                         outcome_cells = game_block.query_selector_all(
@@ -579,9 +646,7 @@ class DraftKingsScraper:
         results: list[dict] = []
 
         try:
-            wrappers = page.query_selector_all(
-                "[class*='sportsbook-accordion__wrapper']"
-            )
+            wrappers = page.query_selector_all("[class*='sportsbook-accordion__wrapper']")
 
             for wrapper in wrappers:
                 teams = wrapper.query_selector_all(
