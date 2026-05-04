@@ -14,9 +14,9 @@ permissions:
   contents: read
 
 jobs:
-  # ── Fast lint gate — cheapest check, catches most issues ──
-  lint:
-    name: Lint
+  # ── Quality gate: lint + format (~20s) ──────────────────────
+  quality:
+    name: Code Quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,29 +27,19 @@ jobs:
           cache-dependency-glob: "uv.lock"
 
       - run: uv sync --frozen
-      - run: uv run ruff check .
 
-  # ── Format check ──
-  format:
-    name: Format
-    needs: lint
+      - name: Ruff lint
+        run: uv run ruff check --output-format=github .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+  # ── Fast type check (ty) — non-blocking while tool is experimental ──
+  typecheck-ty:
+    name: Type Check (ty) ⚡
+    needs: quality
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v4
-        with:
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
-
-      - run: uv sync --frozen
-      - run: uv run ruff format --check .
-
-  # ── Type checking (ty) — fast Astral type checker ──
-  type-ty:
-    name: Type Check (ty)
-    needs: lint
-    runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -61,10 +51,10 @@ jobs:
       - run: uv sync --frozen
       - run: uv run ty check
 
-  # ── Type checking (pyright) — thorough static analysis ──
-  type-pyright:
+  # ── Thorough type check (pyright) ──────────────────────────
+  typecheck-pyright:
     name: Type Check (pyright)
-    needs: lint
+    needs: quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -77,10 +67,39 @@ jobs:
       - run: uv sync --frozen
       - run: uv run pyright
 
-  # ── Tests with coverage ──
+  # ── Security audit ─────────────────────────────────────────
+  security:
+    name: Security Audit
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - run: uv sync --frozen
+
+      - name: Run pip-audit
+        run: uv run --with pip-audit pip-audit --desc --progress-spinner off
+
+  # ── Dependency review (PRs only, independent of quality gate) ──
+  dependency-review:
+    name: Dependency Review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+
+  # ── Tests with coverage ────────────────────────────────────
   test:
     name: Tests
-    needs: lint
+    needs: quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -93,7 +112,14 @@ jobs:
       - run: uv sync --frozen
 
       - name: Run tests with coverage
-        run: uv run pytest --tb=short -q --cov=src --cov-report=term-missing --cov-report=xml
+        run: |
+          uv run pytest \
+            --cov \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-report=html \
+            --cov-fail-under=60 \
+            -q
 
       - name: Upload coverage report
         if: always()
