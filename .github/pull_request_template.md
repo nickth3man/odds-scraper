@@ -8,7 +8,7 @@
 - [ ] `uv run ruff check .`
 - [ ] `uv run ty check`
 - [ ] `uv run pyright`
-- [ ] `uv run pytest --cov=src --cov-fail-under=80`
+- [ ] `uv run pytest`
 
 ## Scraper and UX impact
 
