@@ -2,7 +2,7 @@ from backend.models.odds_enrichment import (
     enrich_live_odds_rows,
     merge_source_rows,
     parse_american_odds,
-    recompute_ev,
+    recompute_expected_value,
 )
 from frontend.gui.pages.live_odds import SOURCE_BADGE_SLOT
 
@@ -43,8 +43,8 @@ def test_enrich_live_odds_rows_adds_ev_per_100_from_away_moneyline():
         model_probability=0.55,
     )
 
-    assert row['ev_per_100'] == '$5.00'
-    assert row['home_ev_per_100'] == '$21.00'
+    assert row['expected_value_per_100'] == '$5.00'
+    assert row['home_expected_value_per_100'] == '$21.00'
 
 
 def test_enrich_live_odds_rows_marks_unusable_moneyline_as_not_available():
@@ -65,35 +65,40 @@ def test_enrich_live_odds_rows_marks_unusable_moneyline_as_not_available():
         model_probability=0.55,
     )
 
-    assert row['ev_per_100'] == 'N/A'
-    assert row['home_ev_per_100'] == '$21.00'
+    assert row['expected_value_per_100'] == 'N/A'
+    assert row['home_expected_value_per_100'] == '$21.00'
 
 
-def test_recompute_ev_updates_ev_columns_with_new_probability():
+def test_recompute_expected_value_updates_ev_columns_with_new_probability():
     rows = [
         {
             'matchup': 'LAL @ BOS',
             'moneyline': '-110',
             'home_moneyline': '+120',
-            'ev_per_100': '$5.00',
-            'home_ev_per_100': '$21.00',
+            'expected_value_per_100': '$5.00',
+            'home_expected_value_per_100': '$21.00',
         }
     ]
 
-    updated = recompute_ev(rows, model_probability=0.60)
+    updated = recompute_expected_value(rows, model_probability=0.60)
 
-    assert updated[0]['ev_per_100'] != '$5.00'
-    assert updated[0]['home_ev_per_100'] != '$21.00'
+    assert updated[0]['expected_value_per_100'] != '$5.00'
+    assert updated[0]['home_expected_value_per_100'] != '$21.00'
 
 
 def test_merge_source_rows_replaces_only_refreshed_sportsbook_rows():
     existing_rows = [
-        {'matchup': 'Old ESPN Game', 'source': 'ESPN', 'moneyline': '-110', 'ev_per_100': '$5.00'},
+        {
+            'matchup': 'Old ESPN Game',
+            'source': 'ESPN',
+            'moneyline': '-110',
+            'expected_value_per_100': '$5.00',
+        },
         {
             'matchup': 'DraftKings Game',
             'source': 'DraftKings',
             'moneyline': '+150',
-            'ev_per_100': '$0.00',
+            'expected_value_per_100': '$0.00',
         },
     ]
     new_espn_games = [
@@ -116,18 +121,18 @@ def test_merge_source_rows_replaces_only_refreshed_sportsbook_rows():
         'DraftKings Game',
         'OKC Thunder @ Boston Celtics',
     ]
-    assert rows[1]['ev_per_100'] == '$5.00'
-    assert rows[1]['home_ev_per_100'] == '$21.00'
+    assert rows[1]['expected_value_per_100'] == '$5.00'
+    assert rows[1]['home_expected_value_per_100'] == '$21.00'
 
 
-def test_merge_source_rows_recomputes_ev_for_preserved_rows():
+def test_merge_source_rows_recomputes_expected_value_for_preserved_rows():
     existing_rows = [
         {
             'matchup': 'DK Game',
             'source': 'DraftKings',
             'moneyline': '+150',
             'home_moneyline': '-200',
-            'ev_per_100': '$0.00',  # stale EV computed at an old probability
+            'expected_value_per_100': '$0.00',  # stale expected value computed at an old probability
         },
     ]
     new_espn_games = [
@@ -148,4 +153,6 @@ def test_merge_source_rows_recomputes_ev_for_preserved_rows():
 
     dk_row = rows[0]
     assert dk_row['source'] == 'DraftKings'
-    assert dk_row['ev_per_100'] != '$0.00'  # EV recomputed with current probability
+    assert (
+        dk_row['expected_value_per_100'] != '$0.00'
+    )  # expected value recomputed with current probability
