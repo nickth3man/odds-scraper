@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from playwright.sync_api import sync_playwright, Page, ElementHandle, TimeoutError as PlaywrightTimeoutError
+from playwright_stealth import stealth_sync
+
 # =============================================================================
 # DRAFTKINGS NBA BETTING CATEGORIES — TO BE SCRAPED
 # =============================================================================
@@ -208,59 +211,44 @@ except ImportError:  # pragma: no cover
     _HtmlSelector: type[HtmlSelector] | None = None
     _PARSEL_AVAILABLE = False
 
-
-class _ByFallback:
-    CSS_SELECTOR = 'css selector'
-    XPATH = 'xpath'
-
-
-class _NoSuchElementExceptionFallbackError(Exception):
-    """Fallback exception used when Selenium is unavailable."""
-
-
-By = _ByFallback
-NoSuchElementException = _NoSuchElementExceptionFallbackError
-
-try:
-    from selenium.common.exceptions import NoSuchElementException as SeleniumNoSuchElementException
-    from selenium.webdriver.common.by import By
-
-    NoSuchElementException = SeleniumNoSuchElementException
-    SELENIUM_AVAILABLE = True
-except ImportError:
-    SELENIUM_AVAILABLE = False
-
-
 logger = logging.getLogger(__name__)
+
+USER_AGENT = (
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+    'AppleWebKit/537.36 (KHTML, like Gecko) '
+    'Chrome/124.0.0.0 Safari/537.36'
+)
 
 
 class DraftKingsScraper:
     """Scrape and parse DraftKings NBA odds."""
 
     @staticmethod
-    def _create_driver():
-        """Create a headless Chrome driver with anti-detection settings."""
-        from selenium import webdriver
-        from selenium.webdriver.chrome.options import Options
-
-        chrome_options = Options()
-        chrome_options.add_argument('--headless=new')
-        chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_argument(
-            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-            'AppleWebKit/537.36 (KHTML, like Gecko) '
-            'Chrome/124.0.0.0 Safari/537.36'
+    def _create_page():
+        """Create a stealth-configured Playwright browser page."""
+        pw = sync_playwright().start()
+        browser = pw.chromium.launch(
+            headless=True,
+            args=[
+                '--disable-blink-features=AutomationControlled',
+                '--window-size=1920,1080',
+            ],
         )
-        chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
-        chrome_options.add_experimental_option('useAutomationExtension', False)
-
-        driver = webdriver.Chrome(options=chrome_options)
-        driver.execute_cdp_cmd(
-            'Page.addScriptToEvaluateOnNewDocument',
-            {'source': 'Object.defineProperty(navigator, "webdriver", {get: () => undefined})'},
+        context = browser.new_context(
+            viewport={'width': 1920, 'height': 1080},
+            user_agent=USER_AGENT,
         )
-        return driver
+        context.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+        )
+        page = context.new_page()
+        stealth_sync(page)
+        return pw, page
+
+    @staticmethod
+    def _cleanup(pw):
+        """Clean up Playwright instance."""
+        pw.stop()
 
     def scrape_odds(self) -> list[GameOdds]:
         """
@@ -270,9 +258,6 @@ class DraftKingsScraper:
         (built into Selenium 4.6+) automatically downloads the correct
         ChromeDriver — no webdriver-manager package required.
         """
-        if not SELENIUM_AVAILABLE:
-            print('[WARN] Selenium not available. Install with: pip install selenium')
-            return []
 
         from selenium.common.exceptions import TimeoutException
         from selenium.webdriver.support import expected_conditions as EC  # noqa: N812
@@ -328,9 +313,6 @@ class DraftKingsScraper:
         Navigates to ?category=futures&subcategory=champion and parses
         team names with American championship odds.
         """
-        if not SELENIUM_AVAILABLE:
-            print('[WARN] Selenium not available. Install with: pip install selenium')
-            return []
 
         from selenium.common.exceptions import TimeoutException
         from selenium.webdriver.support import expected_conditions as EC  # noqa: N812
