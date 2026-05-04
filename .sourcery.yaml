@@ -1,0 +1,34 @@
+ignore:
+  - .git
+  - .venv
+  - .mypy_cache
+  - .pytest_cache
+  - .ruff_cache
+  - htmlcov
+  - data
+  - reference
+  - dist
+  - build
+
+rule_settings:
+  enable:
+    - default
+  rule_types:
+    - refactoring
+    - suggestion
+    - comment
+  python_version: '3.12'
+
+metrics:
+  quality_threshold: 30.0
+
+clone_detection:
+  min_lines: 6
+  min_duplicates: 2
+  identical_clones_only: false
+
+github:
+  ignore_labels:
+    - sourcery-ignore
+  request_review: author
+  sourcery_branch: sourcery/{base_branch}

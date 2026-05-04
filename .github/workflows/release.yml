@@ -3,55 +3,99 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*.*.*'
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  FORCE_COLOR: '1'
+  PYTHONUNBUFFERED: '1'
+  UV_FROZEN: '1'
+  UV_LINK_MODE: copy
 
 jobs:
   release:
-    name: Create Release
+    name: Build, attest, and publish release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - uses: astral-sh/setup-uv@v8
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           enable-cache: true
-          cache-dependency-glob: "uv.lock"
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
 
-      - run: uv sync --frozen
+      - name: Sync dependencies
+        run: uv sync --locked --group dev
 
-      - name: Verify version matches tag
+      - name: Verify tag matches project version
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
-          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
-          PYPROJECT_VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
-          echo "Tag version: $TAG_VERSION"
-          echo "pyproject.toml version: $PYPROJECT_VERSION"
-          if [ "$TAG_VERSION" != "$PYPROJECT_VERSION" ]; then
-            echo "ERROR: Tag version ($TAG_VERSION) does not match pyproject.toml version ($PYPROJECT_VERSION)"
-            exit 1
-          fi
+          python - <<'PY'
+          import os
+          import pathlib
+          import sys
+          import tomllib
 
-      - name: Run tests
-        run: uv run pytest -q
+          tag = os.environ['GITHUB_REF_NAME'].removeprefix('v')
+          version = tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version']
+          if tag != version:
+              print(f'Tag v{tag} does not match pyproject.toml version {version}.')
+              sys.exit(1)
+          PY
 
-      - name: Generate changelog
+      - name: Run release checks
         run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          if [ -n "$PREV_TAG" ]; then
-            git log --pretty=format:"- %s (%h)" "$PREV_TAG"..HEAD > CHANGELOG.md
-          else
-            git log --pretty=format:"- %s (%h)" HEAD > CHANGELOG.md
-          fi
-          echo "## Changelog" >> CHANGELOG.md.new
-          echo "" >> CHANGELOG.md.new
-          cat CHANGELOG.md >> CHANGELOG.md.new
-          mv CHANGELOG.md.new CHANGELOG.md
+          uv run --frozen ruff format --check .
+          uv run --frozen ruff check --output-format=github .
+          uv run --frozen pyright
+          uv run --frozen pytest --cov=src --cov-fail-under=80
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Build distributions
+        run: uv build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
         with:
-          body_path: CHANGELOG.md
+          name: dist
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Generate build provenance attestation
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: dist/*
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag
