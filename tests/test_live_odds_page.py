@@ -80,3 +80,33 @@ def test_merge_source_rows_replaces_only_refreshed_sportsbook_rows():
         'OKC Thunder @ Boston Celtics',
     ]
     assert rows[1]['ev_per_100'] == '$5.00'
+
+
+def test_merge_source_rows_recomputes_ev_for_preserved_rows():
+    existing_rows = [
+        {
+            'matchup': 'DK Game',
+            'source': 'DraftKings',
+            'moneyline': '+150',
+            'ev_per_100': '$0.00',  # stale EV computed at an old probability
+        },
+    ]
+    new_espn_games = [
+        {
+            'date': '2026-04-30',
+            'home_team': 'Boston Celtics',
+            'away_team': 'OKC Thunder',
+            'matchup': 'OKC Thunder @ Boston Celtics',
+            'spread': '-2.5',
+            'moneyline': '-110',
+            'home_moneyline': '+120',
+            'over_under': '223.5',
+            'source': 'ESPN',
+        }
+    ]
+
+    rows = merge_source_rows(existing_rows, new_espn_games, 'ESPN', model_probability=0.55)
+
+    dk_row = rows[0]
+    assert dk_row['source'] == 'DraftKings'
+    assert dk_row['ev_per_100'] != '$0.00'  # EV recomputed with current probability
