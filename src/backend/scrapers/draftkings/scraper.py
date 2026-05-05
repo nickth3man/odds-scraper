@@ -187,12 +187,12 @@ from __future__ import annotations
 #   All fixtures embed window.__INITIAL_STATE__ JSON containing eventGroups,
 #   outcomes, and sports data. Parsers should extract this JSON block first.
 # ==============================================================================
-import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from loguru import logger
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 from playwright_stealth import Stealth
@@ -235,7 +235,6 @@ except ImportError:  # pragma: no cover
     _HtmlSelector: type[HtmlSelector] | None = None
     _PARSEL_AVAILABLE = False
 
-logger = logging.getLogger(__name__)
 
 USER_AGENT = (
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
@@ -311,6 +310,7 @@ class DraftKingsScraper:
                 logger.warning('Failed to close DraftKings Playwright %s: %s', resource_name, error)
         session.playwright.stop()
 
+    @logger.catch
     def scrape_odds(self) -> list[GameOdds]:
         """Scrape live odds from DraftKings using Playwright.
 
@@ -318,7 +318,7 @@ class DraftKingsScraper:
         to DraftKings, waits for the game table to load, then passes the page
         to parse_games() for HTML extraction.
         """
-        print('[Fetching] Live odds from DraftKings (this takes 10-15 seconds)...\n')
+        logger.info('Fetching live odds', source='DraftKings', action='fetch')
 
         session = None
         try:
@@ -327,16 +327,16 @@ class DraftKingsScraper:
 
             page.goto(DK_BASE_URL, wait_until='domcontentloaded')
 
-            print('Waiting for DraftKings to load (20 seconds)...')
+            logger.info('Waiting for page load', source='DraftKings', timeout=20, action='wait')
 
             try:
                 page.wait_for_selector(
                     PAGE_LOAD_SELECTOR,
                     timeout=20000,
                 )
-                print('[OK] Page loaded!\n')
+                logger.info('Page loaded', source='DraftKings', action='complete')
             except PlaywrightTimeoutError:
-                print('[WARN] Page took too long to load — saving debug snapshot\n')
+                logger.warning('Page load timeout, saving debug snapshot', source='DraftKings')
                 logger.warning('DraftKings timeout. Page title: %s', page.title())
                 logger.warning(
                     'Page source preview: %.500s',
@@ -349,9 +349,11 @@ class DraftKingsScraper:
             logger.info('DraftKings parse_games returned %d games', len(games))
 
             if games:
-                print(f'[OK] DraftKings: Found {len(games)} games\n')
+                logger.info(
+                    'Scrape complete', source='DraftKings', game_count=len(games), action='complete'
+                )
             else:
-                print('[WARN] DraftKings: No games found\n')
+                logger.warning('No games found', source='DraftKings')
 
             return games
 
@@ -362,13 +364,14 @@ class DraftKingsScraper:
         finally:
             self._cleanup(session)
 
+    @logger.catch
     def scrape_futures_champion(self) -> list[dict]:
         """Scrape DraftKings futures champion odds using Playwright.
 
         Navigates to ?category=futures&subcategory=champion and parses
         team names with American championship odds.
         """
-        print('[Fetching] DraftKings futures champion odds...')
+        logger.info('Fetching futures champion odds', source='DraftKings', action='fetch')
 
         session = None
         try:
@@ -376,24 +379,31 @@ class DraftKingsScraper:
             page = session.page
             page.goto(DK_FUTURES_CHAMPION_URL, wait_until='domcontentloaded')
 
-            print('Waiting for DraftKings to load (15 seconds)...')
+            logger.info(
+                'Waiting for futures page load', source='DraftKings', timeout=15, action='wait'
+            )
 
             try:
                 page.wait_for_selector(
                     FUTURES_LOAD_SELECTOR,
                     timeout=15000,
                 )
-                print('[OK] Champion page loaded!')
+                logger.info('Futures champion page loaded', source='DraftKings', action='complete')
             except PlaywrightTimeoutError:
-                print('[WARN] Champion page took too long to load')
+                logger.warning('Futures champion page load timeout', source='DraftKings')
                 return []
 
             results = self.parse_futures_champion(page)
 
             if results:
-                print(f'[OK] DraftKings Champion: Found {len(results)} teams')
+                logger.info(
+                    'Futures champion scrape complete',
+                    source='DraftKings',
+                    team_count=len(results),
+                    action='complete',
+                )
             else:
-                print('[WARN] DraftKings Champion: No teams found')
+                logger.warning('No champion teams found', source='DraftKings')
 
             return results
 

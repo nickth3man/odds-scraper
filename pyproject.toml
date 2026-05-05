@@ -23,6 +23,8 @@ dependencies = [
     "nicegui>=2.0",
     "playwright>=1.59.0",
     "playwright-stealth>=2.0.3",
+    "loguru>=0.7.3",
+    "nba-api>=1.7.0",
 ]
 
 [dependency-groups]

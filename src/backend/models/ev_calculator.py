@@ -1,3 +1,6 @@
+from loguru import logger
+
+
 class EVCalculator:
     """Calculate Expected Value for sports bets"""
 
@@ -112,15 +115,14 @@ class EVCalculator:
 
     def display_bet_analysis(self, bets: list[dict]):
         """Display formatted bet analysis"""
-        print(f'\n{"=" * 100}')
-        print('BET ANALYSIS')
-        print(f'{"=" * 100}\n')
+        logger.debug('Bet analysis', bet_count=len(bets))
 
         for bet in bets:
-            print(f'TEAM: {bet["team"]}')
-            print(f'  Model Probability:     {bet["model_probability"]}')
-            print(f'  Sportsbook Probability: {bet["sportsbook_probability"]}')
-            print(f'  Odds:                  {bet["american_odds"]}')
-            print(f'  Expected Value per $100:  {bet["expected_value_per_stake"]}')
-            print(f'  Expected Value Percentage: {bet["expected_value_percent"]}')
-            print(f'  Recommendation:        {bet["recommendation"]}\n')
+            logger.debug(
+                'Bet: {team}',
+                team=bet['team'],
+                model_prob=bet['model_probability'],
+                odds=bet['american_odds'],
+                ev=bet['expected_value_per_stake'],
+                recommendation=bet['recommendation'],
+            )

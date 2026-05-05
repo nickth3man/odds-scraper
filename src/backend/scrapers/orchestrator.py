@@ -1,13 +1,12 @@
-import logging
+import uuid
 
 import pandas as pd
+from loguru import logger
 
 from .draftkings.scraper import DraftKingsScraper
 from .espn.scraper import EspnOddsScraper
 from .shared.http_client import HttpClient
 from .shared.parsers import GameOdds
-
-logger = logging.getLogger(__name__)
 
 
 class LiveOddsScraper:
@@ -50,13 +49,14 @@ class LiveOddsScraper:
     def export_to_csv(self, games, filename='data/live_odds.csv'):
         """Export live odds to CSV."""
         if not games:
-            print('No games to export')
+            logger.warning('No games to export')
             return None
 
         games_table = pd.DataFrame(games)
         games_table.to_csv(filename, index=False)
-        print(f'[OK] Live odds exported to {filename}')
-        print(f'   Total games: {len(games_table)}\n')
+        logger.info(
+            'Exported live odds', filename=filename, game_count=len(games_table), action='export'
+        )
 
         return games_table
 
@@ -67,23 +67,26 @@ class LiveOddsScraper:
 
         games_table = pd.DataFrame(games)
 
-        print('=' * 100)
-        print(f'LIVE {source} GAMES')
-        print('=' * 100)
-        print(games_table.to_string(index=False))
-        print()
+        logger.debug(
+            'Displaying games',
+            source=source,
+            count=len(games),
+            table=games_table.to_string(index=False),
+        )
 
     def get_all_games(self):
         """Scrape both ESPN and DraftKings."""
-        print('NBA Live odds from all sources\n')
-        self.games = []
+        session_id = uuid.uuid4().hex[:8]
+        with logger.contextualize(scrape_session=session_id):
+            logger.info('Scraping all sources', action='fetch_all')
+            self.games = []
 
-        espn_games = self.scrape_espn_nba_odds()
-        if espn_games:
-            self.display_games(espn_games, 'ESPN')
+            espn_games = self.scrape_espn_nba_odds()
+            if espn_games:
+                self.display_games(espn_games, 'ESPN')
 
-        draftkings_games = self.scrape_draftkings_odds()
-        if draftkings_games:
-            self.display_games(draftkings_games, 'DRAFTKINGS')
+            draftkings_games = self.scrape_draftkings_odds()
+            if draftkings_games:
+                self.display_games(draftkings_games, 'DRAFTKINGS')
 
-        return self.games
+            return self.games

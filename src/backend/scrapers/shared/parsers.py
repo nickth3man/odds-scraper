@@ -2,27 +2,35 @@
 
 from __future__ import annotations
 
-import logging
 import re
 from datetime import datetime
-from typing import TypedDict
+from typing import Required, TypedDict
+
+from loguru import logger
 
 
-class GameOdds(TypedDict):
+class GameOdds(TypedDict, total=False):
     """Canonical schema for a single game's odds from any source."""
 
-    date: str
-    home_team: str
-    away_team: str
-    matchup: str
-    spread: str
-    moneyline: str
-    home_moneyline: str
-    over_under: str
-    source: str
-
-
-logger = logging.getLogger(__name__)
+    date: Required[str]
+    home_team: Required[str]
+    away_team: Required[str]
+    matchup: Required[str]
+    spread: Required[str]
+    moneyline: Required[str]
+    home_moneyline: Required[str]
+    over_under: Required[str]
+    source: Required[str]
+    # Optional enrichment fields (Phase 1)
+    home_win_pct: float
+    away_win_pct: float
+    home_off_rating: float
+    home_def_rating: float
+    away_off_rating: float
+    away_def_rating: float
+    home_record: str
+    away_record: str
+    model_probability_source: str
 
 
 def extract_first_signed_number(text: str) -> str | None:
@@ -51,7 +59,7 @@ def format_american_odds(value: str | int | float | None) -> str:
         odds = int(value)
         return f'+{odds}' if odds > 0 else str(odds)
     except (TypeError, ValueError):
-        logger.warning('Could not convert odds value to int: %r', value)
+        logger.warning('Could not convert odds value to int: {!r}', value)
         return str(value)
 
 

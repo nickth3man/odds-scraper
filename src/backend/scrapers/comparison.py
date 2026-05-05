@@ -1,4 +1,5 @@
 import pandas as pd
+from loguru import logger
 
 
 def _normalize_game(game: dict) -> dict:
@@ -30,7 +31,7 @@ class OddsComparison:
     def add_odds(self, sportsbook: str, odds_list: list[dict]):
         """Add odds from a sportsbook"""
         self.odds_by_sportsbook[sportsbook] = odds_list
-        print(f'[OK] Added {len(odds_list)} odds from {sportsbook}')
+        logger.info('Odds added', sportsbook=sportsbook, count=len(odds_list))
 
     def find_best_odds(self, bet_type: str = 'moneyline'):
         """Find the best odds for each matchup."""
@@ -100,28 +101,19 @@ class OddsComparison:
         """Display a formatted comparison of odds"""
         results = self.find_best_odds(bet_type)
 
-        print(f'\n{"=" * 80}')
-        print(f'ODDS COMPARISON ({bet_type.upper()})')
-        print(f'{"=" * 80}\n')
-
-        for result in results:
-            print(f'{result["team"]} vs {result["opponent"]}')
-            print(f'  Date: {result["date"]}')
-            print(f'  Best: {result["best_sportsbook"]} ({result["best_odds"]})')
-
-            for field_name, odds in result.items():
-                if field_name.endswith('_odds'):
-                    sportsbook_name = field_name.replace('_odds', '')
-                    print(f'    {sportsbook_name}: {odds}')
-            print()
+        logger.debug('Comparison display', bet_type=bet_type, game_count=len(results))
 
     def export_to_csv(self, filename='data/odds_comparison_results.csv'):
         """Export comparison results to CSV"""
         if not self.comparison_results:
-            print('No comparison results. Run find_best_odds() first.')
+            logger.warning('No comparison results to display')
             return
 
         comparison_table = pd.DataFrame(self.comparison_results)
         comparison_table.to_csv(filename, index=False)
-        print(f'[OK] Comparison exported to {filename}')
-        print(f'  Total games: {len(comparison_table)}')
+        logger.info(
+            'Comparison exported',
+            filename=filename,
+            game_count=len(comparison_table),
+            action='export',
+        )

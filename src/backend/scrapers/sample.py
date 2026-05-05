@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 
 import pandas as pd
+from loguru import logger
 
 
 class OddsScraper:
@@ -19,12 +20,12 @@ class OddsScraper:
             with open(config_file) as f:
                 return json.load(f)
         except FileNotFoundError:
-            print(f'Config file not found: {config_file}')
+            logger.warning('Config file not found', path=config_file)
             return {}
 
     def scrape_espn_odds(self):
         """Scrape NBA odds from ESPN"""
-        print('Scraping ESPN odds...')
+        logger.info('Scraping odds', sportsbook='ESPN')
 
         # Sample NBA odds data for 2025-26 season
         espn_odds = [
@@ -74,7 +75,7 @@ class OddsScraper:
 
     def scrape_draftkings_odds(self):
         """Scrape NBA odds from DraftKings"""
-        print('Scraping DraftKings odds...')
+        logger.info('Scraping odds', sportsbook='DraftKings')
 
         # Sample DraftKings odds (slightly different lines)
         draftkings_odds = [
@@ -124,7 +125,7 @@ class OddsScraper:
 
     def scrape_fanduel_odds(self):
         """Scrape NBA odds from FanDuel"""
-        print('Scraping FanDuel odds...')
+        logger.info('Scraping odds', sportsbook='FanDuel')
 
         # Sample FanDuel odds
         fanduel_odds = [
@@ -191,11 +192,9 @@ class OddsScraper:
     def export_to_csv(self, filename='data/sample_odds_data.csv'):
         """Export scraped odds to CSV file"""
         if not self.scraped_odds:
-            print('No odds to export. Run get_all_odds() first.')
+            logger.warning('No odds to export')
             return
 
         odds_table = pd.DataFrame(self.scraped_odds)
         odds_table.to_csv(filename, index=False)
-        print(f'[OK] Odds exported to {filename}')
-        print(f'  Total records: {len(odds_table)}')
-        print(f'  Sportsbooks: {odds_table["sportsbook"].unique().tolist()}')
+        logger.info('Sample odds exported', filename=filename, record_count=len(odds_table))

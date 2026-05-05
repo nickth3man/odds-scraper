@@ -1,10 +1,9 @@
-import logging
-
 from nicegui import app, ui
 
+from backend.logging_config import configure_logging
 from frontend.gui.pages import home, live_odds
 
-logging.basicConfig(level=logging.INFO)
+configure_logging(level='INFO')
 
 app.include_router(home.router)
 app.include_router(live_odds.router)

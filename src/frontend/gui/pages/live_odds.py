@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from nicegui import APIRouter, run, ui
 
+from backend.enrichment import TeamEnrichmentService
 from backend.models.odds_enrichment import merge_source_rows, recompute_expected_value
 from backend.scrapers import LiveOddsScraper
 from backend.scrapers.espn import EspnOddsScraper
@@ -26,6 +27,9 @@ COLUMNS = [
         'field': 'home_expected_value_per_100',
     },
     {'name': 'source', 'label': 'Source', 'field': 'source', 'sortable': True},
+    {'name': 'home_record', 'label': 'Record (H)', 'field': 'home_record'},
+    {'name': 'away_record', 'label': 'Record (A)', 'field': 'away_record'},
+    {'name': 'home_win_pct', 'label': 'Win% (Model)', 'field': 'home_win_pct'},
 ]
 
 SOURCE_BADGE_SLOT = """
@@ -43,6 +47,8 @@ def live_odds() -> None:
     for EV computation, and a searchable table with per-row expected-value
     enrichment for both away and home moneylines.
     """
+    enrichment = TeamEnrichmentService()
+
     with ui.column().classes('w-full p-6 gap-4'):
         with ui.row().classes('items-center gap-2'):
             ui.button(icon='arrow_back', on_click=lambda: ui.navigate.to('/')).props('flat round')
@@ -79,7 +85,9 @@ def live_odds() -> None:
             try:
                 scraper = EspnOddsScraper()
                 games = await run.io_bound(scraper.scrape_nba_odds)
-                rows = merge_source_rows(table.rows, games, 'ESPN', current_model_probability())
+                rows = merge_source_rows(
+                    table.rows, games, 'ESPN', current_model_probability(), enrichment
+                )
                 table.update_rows(rows)
                 status.text = f'Loaded {len(games)} ESPN games.'
             except Exception:
@@ -95,7 +103,7 @@ def live_odds() -> None:
                 scraper = LiveOddsScraper()
                 games = await run.io_bound(scraper.scrape_draftkings_odds)
                 rows = merge_source_rows(
-                    table.rows, games, 'DraftKings', current_model_probability()
+                    table.rows, games, 'DraftKings', current_model_probability(), enrichment
                 )
                 table.update_rows(rows)
                 status.text = f'Loaded {len(games)} DraftKings games.'

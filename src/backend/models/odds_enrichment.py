@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
+from backend.enrichment import TeamEnrichmentService, compute_model_probability
 from backend.models.ev_calculator import EVCalculator
 
 
@@ -45,7 +46,9 @@ def format_expected_value_per_100(
 
 
 def enrich_live_odds_rows(
-    games: Sequence[Mapping[str, object]], model_probability: float
+    games: Sequence[Mapping[str, object]],
+    model_probability: float,
+    enrichment_service: TeamEnrichmentService | None = None,
 ) -> list[dict]:
     """Convert raw scraper game mappings into display rows with EV enrichment.
 
@@ -63,17 +66,40 @@ def enrich_live_odds_rows(
     rows: list[dict] = []
     for game in games:
         row = dict(game)
+        effective_probability = model_probability
+        if enrichment_service is not None:
+            home_team = str(row.get('home_team', ''))
+            away_team = str(row.get('away_team', ''))
+            home_stats = enrichment_service.get_team_stats(home_team)
+            away_stats = enrichment_service.get_team_stats(away_team)
+            if home_stats and away_stats:
+                effective_probability = compute_model_probability(home_stats, away_stats)
+                row['home_win_pct'] = effective_probability
+                row['away_win_pct'] = 1.0 - effective_probability
+                row['home_off_rating'] = home_stats.off_rating
+                row['home_def_rating'] = home_stats.def_rating
+                row['away_off_rating'] = away_stats.off_rating
+                row['away_def_rating'] = away_stats.def_rating
+                row['home_record'] = f'{home_stats.wins}-{home_stats.losses}'
+                row['away_record'] = f'{away_stats.wins}-{away_stats.losses}'
+                row['model_probability_source'] = 'nba_api'
+            else:
+                row['model_probability_source'] = 'manual_slider'
         row['expected_value_per_100'] = format_expected_value_per_100(
-            calculator, row.get('moneyline'), model_probability
+            calculator, row.get('moneyline'), effective_probability
         )
         row['home_expected_value_per_100'] = format_expected_value_per_100(
-            calculator, row.get('home_moneyline'), model_probability
+            calculator, row.get('home_moneyline'), effective_probability
         )
         rows.append(row)
     return rows
 
 
-def recompute_expected_value(rows: list[dict], model_probability: float) -> list[dict]:
+def recompute_expected_value(
+    rows: list[dict],
+    model_probability: float,
+    enrichment_service: TeamEnrichmentService | None = None,
+) -> list[dict]:
     """Re-compute EV columns for existing table rows using a new probability.
 
     Args:
@@ -105,6 +131,7 @@ def merge_source_rows(
     games: Sequence[Mapping[str, object]],
     source: str,
     model_probability: float,
+    enrichment_service: TeamEnrichmentService | None = None,
 ) -> list[dict]:
     """Merge newly scraped games into the existing table rows.
 
@@ -123,4 +150,4 @@ def merge_source_rows(
     """
     rows_from_other_sources = [dict(row) for row in existing_rows if row.get('source') != source]
     re_enriched = recompute_expected_value(rows_from_other_sources, model_probability)
-    return re_enriched + enrich_live_odds_rows(games, model_probability)
+    return re_enriched + enrich_live_odds_rows(games, model_probability, enrichment_service)

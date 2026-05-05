@@ -7,7 +7,6 @@ delays to avoid overloading upstream APIs.
 
 from __future__ import annotations
 
-import logging
 import time
 from collections.abc import Callable
 from importlib import import_module
@@ -16,6 +15,7 @@ from urllib.parse import urlparse
 
 import httpx
 from courlan.urlutils import get_hostinfo
+from loguru import logger
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -45,8 +45,6 @@ except ImportError:  # pragma: no cover
     _curl_get = None
     _CURL_TRANSIENT_EXCEPTIONS: tuple[type[Exception], ...] = ()
     _CURL_AVAILABLE = False
-
-logger = logging.getLogger(__name__)
 
 
 class _FallbackUserAgent:
@@ -224,7 +222,7 @@ class HttpClient:
         elapsed = time.monotonic() - self._domain_timestamps[domain]
         wait_time = self._min_delay - elapsed
         if wait_time > 0:
-            logger.debug('Rate limiting %s: sleeping %.2fs', domain, wait_time)
+            logger.debug('Rate limiting {}: sleeping {:.2f}s', domain, wait_time)
             time.sleep(wait_time)
 
     @staticmethod
@@ -233,7 +231,7 @@ class HttpClient:
         attempt = retry_state.attempt_number
         exception = retry_state.outcome.exception() if retry_state.outcome else None
         logger.warning(
-            'HTTP retry %d/%d — %s: %s',
+            'HTTP retry {}/{} — {}: {}',
             attempt,
             retry_state.retry_object.stop.max_attempt_number,  # type: ignore[union-attr]
             type(exception).__name__ if exception else 'unknown',
