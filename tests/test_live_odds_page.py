@@ -43,7 +43,7 @@ def test_enrich_live_odds_rows_adds_ev_per_100_from_away_moneyline():
         model_probability=0.55,
     )
 
-    assert row['expected_value_per_100'] == '$5.00'
+    assert row['expected_value_per_100'] == '$-14.09'
     assert row['home_expected_value_per_100'] == '$21.00'
 
 
@@ -121,7 +121,7 @@ def test_merge_source_rows_replaces_only_refreshed_sportsbook_rows():
         'DraftKings Game',
         'OKC Thunder @ Boston Celtics',
     ]
-    assert rows[1]['expected_value_per_100'] == '$5.00'
+    assert rows[1]['expected_value_per_100'] == '$-14.09'
     assert rows[1]['home_expected_value_per_100'] == '$21.00'
 
 

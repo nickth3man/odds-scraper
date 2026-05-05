@@ -85,8 +85,9 @@ def live_odds() -> None:
             try:
                 scraper = EspnOddsScraper()
                 games = await run.io_bound(scraper.scrape_nba_odds)
-                rows = merge_source_rows(
-                    table.rows, games, 'ESPN', current_model_probability(), enrichment
+                prob = current_model_probability()
+                rows = await run.io_bound(
+                    merge_source_rows, list(table.rows), games, 'ESPN', prob, enrichment
                 )
                 table.update_rows(rows)
                 status.text = f'Loaded {len(games)} ESPN games.'
@@ -106,8 +107,9 @@ def live_odds() -> None:
             try:
                 scraper = LiveOddsScraper()
                 games = await run.io_bound(scraper.scrape_draftkings_odds)
-                rows = merge_source_rows(
-                    table.rows, games, 'DraftKings', current_model_probability(), enrichment
+                prob = current_model_probability()
+                rows = await run.io_bound(
+                    merge_source_rows, list(table.rows), games, 'DraftKings', prob, enrichment
                 )
                 table.update_rows(rows)
                 status.text = f'Loaded {len(games)} DraftKings games.'
@@ -116,13 +118,14 @@ def live_odds() -> None:
             finally:
                 draftkings_button.enable()
 
-        model_probability.on_value_change(
-            lambda _e: (
-                table.update_rows(recompute_expected_value(table.rows, current_model_probability()))
-                if table.rows
-                else None
-            )
-        )
+        async def on_probability_change(_e: object) -> None:
+            if table.rows:
+                updated = await run.io_bound(
+                    recompute_expected_value, list(table.rows), current_model_probability()
+                )
+                table.update_rows(updated)
+
+        model_probability.on_value_change(on_probability_change)
 
         espn_button.on_click(scrape_espn)
         draftkings_button.on_click(scrape_draftkings)

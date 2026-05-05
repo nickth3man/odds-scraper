@@ -87,7 +87,7 @@ def enrich_live_odds_rows(
             else:
                 row['model_probability_source'] = 'manual_slider'
         row['expected_value_per_100'] = format_expected_value_per_100(
-            calculator, row.get('moneyline'), effective_probability
+            calculator, row.get('moneyline'), 1.0 - effective_probability
         )
         row['home_expected_value_per_100'] = format_expected_value_per_100(
             calculator, row.get('home_moneyline'), effective_probability
@@ -100,30 +100,42 @@ def recompute_expected_value(
     rows: list[dict],
     model_probability: float,
 ) -> list[dict]:
-    """Re-compute EV columns for existing table rows using a new probability.
+    """Re-compute EV columns for existing table rows using per-row or slider probability.
+
+    For rows whose ``model_probability_source`` is ``'nba_api'`` the function retains
+    the row's ``home_win_pct`` as the home win probability; all other rows use the
+    slider ``model_probability``. The away EV is always computed from
+    ``1 - home_probability``.
 
     Args:
         rows: Current table rows (each must contain ``moneyline`` and
             ``home_moneyline`` keys).
-        model_probability: Updated win probability (0.0-1.0).
+        model_probability: Fallback home win probability (0.0-1.0) used when the
+            row does not carry a model-derived probability.
 
     Returns:
         New list of rows with refreshed ``expected_value_per_100`` and
         ``home_expected_value_per_100`` values.
     """
     calculator = EVCalculator()
-    return [
-        {
-            **row,
-            'expected_value_per_100': format_expected_value_per_100(
-                calculator, row.get('moneyline'), model_probability
-            ),
-            'home_expected_value_per_100': format_expected_value_per_100(
-                calculator, row.get('home_moneyline'), model_probability
-            ),
-        }
-        for row in rows
-    ]
+    result: list[dict] = []
+    for row in rows:
+        row_prob = model_probability
+        if row.get('model_probability_source') == 'nba_api' and 'home_win_pct' in row:
+            row_prob = float(row['home_win_pct'])
+        away_prob = 1.0 - row_prob
+        result.append(
+            {
+                **row,
+                'expected_value_per_100': format_expected_value_per_100(
+                    calculator, row.get('moneyline'), away_prob
+                ),
+                'home_expected_value_per_100': format_expected_value_per_100(
+                    calculator, row.get('home_moneyline'), row_prob
+                ),
+            }
+        )
+    return result
 
 
 def merge_source_rows(

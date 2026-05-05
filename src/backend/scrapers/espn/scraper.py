@@ -28,7 +28,7 @@ class EspnOddsScraper:
         """
         Scrape and return normalized live NBA odds from ESPN, using the header API with a scoreboard fallback.
 
-        Attempts to fetch and parse odds from ESPN's header API; if the header response contains no games or the header request/parse fails, the function falls back to the ESPN scoreboard fetch and returns its results.
+        Attempts to fetch and parse odds from ESPN's header API; if the header request or parse fails, the function falls back to the ESPN scoreboard fetch and returns its results. When the header response contains no games, an empty list is returned without attempting the fallback.
 
         Returns:
             list[GameOdds]: List of normalized game odds (empty list if no games are found).
