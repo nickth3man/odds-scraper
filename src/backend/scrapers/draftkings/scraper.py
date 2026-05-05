@@ -298,9 +298,9 @@ class DraftKingsScraper:
     def _cleanup(session: _BrowserSession | None) -> None:
         """
         Close the Playwright page, context, and browser for the given session, then stop the Playwright driver.
-        
+
         If `session` is `None` this is a no-op. Failures while closing individual resources are logged as warnings; the Playwright driver is stopped after attempting to close resources.
-        
+
         Parameters:
             session (_BrowserSession | None): Playwright resources to clean up.
         """
@@ -314,14 +314,14 @@ class DraftKingsScraper:
             try:
                 _close_resource(resource)
             except Exception as error:
-                logger.warning('Failed to close DraftKings Playwright %s: %s', resource_name, error)
+                logger.warning('Failed to close DraftKings Playwright {}: {}', resource_name, error)
         session.playwright.stop()
 
     @logger.catch
     def scrape_odds(self) -> list[GameOdds]:
         """
         Fetch current NBA game odds from DraftKings and parse them into GameOdds entries.
-        
+
         Returns:
             list[GameOdds]: A list of parsed GameOdds objects for each found game, or an empty list if no games were found or if an error/timeout occurred.
         """
@@ -344,16 +344,16 @@ class DraftKingsScraper:
                 logger.info('Page loaded', source='DraftKings', action='complete')
             except PlaywrightTimeoutError:
                 logger.warning('Page load timeout, saving debug snapshot', source='DraftKings')
-                logger.warning('DraftKings timeout. Page title: %s', page.title())
+                logger.warning('DraftKings timeout. Page title: {}', page.title())
                 logger.warning(
-                    'Page source preview: %.500s',
+                    'Page source preview: {:.500s}',
                     page.content()[:500] if page else '',
                 )
                 return []
 
-            logger.info('DraftKings page title: %s', page.title())
+            logger.info('DraftKings page title: {}', page.title())
             games = self.parse_games(page)
-            logger.info('DraftKings parse_games returned %d games', len(games))
+            logger.info('DraftKings parse_games returned {} games', len(games))
 
             if games:
                 logger.info(
@@ -365,7 +365,7 @@ class DraftKingsScraper:
             return games
 
         except Exception as error:
-            logger.error('DraftKings scrape failed: %s', error)
+            logger.error('DraftKings scrape failed: {}', error)
             return []
 
         finally:
@@ -375,11 +375,11 @@ class DraftKingsScraper:
     def scrape_futures_champion(self) -> list[dict]:
         """
         Fetches DraftKings champion futures odds and returns them as structured rows.
-        
+
         Navigates to the DraftKings champion futures page and parses available entries into
         a list of dictionaries containing team names and their American odds. On page-load
         timeout or other failures this function returns an empty list.
-        
+
         Returns:
             results (list[dict]): A list of rows with keys `team` (str), `odds` (str, American odds or 'N/A'),
                 `bet_type` (str, 'champion'), and `source` (str, 'DraftKings').
@@ -421,7 +421,7 @@ class DraftKingsScraper:
             return results
 
         except Exception as error:
-            logger.error('DraftKings futures champion scrape failed: %s', error)
+            logger.error('DraftKings futures champion scrape failed: {}', error)
             return []
 
         finally:
@@ -597,13 +597,13 @@ class DraftKingsScraper:
                     )
 
                 except Exception as error:
-                    logger.warning('Failed to parse DraftKings cb-market game: %s', error)
+                    logger.warning('Failed to parse DraftKings cb-market game: {}', error)
                     continue
 
             return games
 
         except Exception as error:
-            logger.warning('Error parsing DraftKings cb-market structure: %s', error)
+            logger.warning('Error parsing DraftKings cb-market structure: {}', error)
             return []
 
     def parse_event_cells(self, page) -> list[GameOdds]:
@@ -665,13 +665,13 @@ class DraftKingsScraper:
                     )
 
                 except Exception as error:
-                    logger.warning('Failed to parse DraftKings game row: %s', error)
+                    logger.warning('Failed to parse DraftKings game row: {}', error)
                     continue
 
             return games
 
         except Exception as error:
-            logger.warning('Error parsing DraftKings event cells: %s', error)
+            logger.warning('Error parsing DraftKings event cells: {}', error)
             return []
 
     def parse_markets(self, outcome_cells, team_name: str) -> tuple[str, str, str]:
@@ -781,11 +781,11 @@ class DraftKingsScraper:
                             }
                         )
                     except Exception as error:
-                        logger.warning('Failed to parse futures team row: %s', error)
+                        logger.warning('Failed to parse futures team row: {}', error)
                         continue
 
         except Exception as error:
-            logger.warning('Failed to parse DraftKings futures %s: %s', bet_type, error)
+            logger.warning('Failed to parse DraftKings futures {}: {}', bet_type, error)
 
         return results or self._parse_futures_buttons(page, bet_type)
 

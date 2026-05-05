@@ -218,7 +218,7 @@ class HttpClient:
     def _wait_for_domain(self, domain: str) -> None:
         """
         Ensure at least _min_delay seconds have elapsed since the last recorded request for the given domain by sleeping for the remaining time when necessary.
-        
+
         Parameters:
             domain (str): Effective domain key used for per-domain rate limiting.
         """
@@ -234,11 +234,11 @@ class HttpClient:
     def _log_retry_attempt(retry_state) -> None:
         """
         Log a warning before tenacity sleeps between retry attempts.
-        
+
         Extracts the attempt number and the exception (when present) from the provided
         tenacity retry state and logs a warning containing the attempt number, the
         configured maximum attempts, the exception type name, and the exception value.
-        
+
         Parameters:
             retry_state (tenacity.RetryCallState): The tenacity retry state passed to
                 callback handlers; used to obtain attempt_number, outcome/exception,

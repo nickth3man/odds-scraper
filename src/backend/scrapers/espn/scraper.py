@@ -27,9 +27,9 @@ class EspnOddsScraper:
     def scrape_nba_odds(self) -> list[GameOdds]:
         """
         Scrape and return normalized live NBA odds from ESPN, using the header API with a scoreboard fallback.
-        
+
         Attempts to fetch and parse odds from ESPN's header API; if the header response contains no games or the header request/parse fails, the function falls back to the ESPN scoreboard fetch and returns its results.
-        
+
         Returns:
             list[GameOdds]: List of normalized game odds (empty list if no games are found).
         """
@@ -65,13 +65,13 @@ class EspnOddsScraper:
     def parse_header_events(self, events: list) -> list[GameOdds]:
         """
         Normalize ESPN header API event objects into a list of GameOdds dictionaries.
-        
+
         Each returned item contains the normalized fields: date, home_team, away_team, matchup,
         spread, moneyline, home_moneyline, over_under, and source.
-        
+
         Parameters:
             events (list): List of event objects returned by the ESPN header API.
-        
+
         Returns:
             list[GameOdds]: A list of normalized game odds dictionaries following the GameOdds schema.
         """
@@ -141,7 +141,7 @@ class EspnOddsScraper:
                 )
 
             except (KeyError, IndexError, ValueError, AttributeError, TypeError) as error:
-                logger.warning('Failed to parse ESPN event: %s', error)
+                logger.warning('Failed to parse ESPN event: {}', error)
                 continue
 
         return games
@@ -149,7 +149,7 @@ class EspnOddsScraper:
     def scrape_scoreboard_fallback(self) -> list[GameOdds]:
         """
         Fetches and normalizes NBA odds from ESPN's scoreboard API.
-        
+
         Returns:
             list[GameOdds]: A list of normalized game odds dictionaries parsed from the scoreboard response. Returns an empty list if no games are found or if the fetch/parse fails.
         """
@@ -175,10 +175,10 @@ class EspnOddsScraper:
     def parse_scoreboard_events(self, events: list) -> list[GameOdds]:
         """
         Parse ESPN scoreboard API event objects into normalized GameOdds dictionaries.
-        
+
         Parameters:
             events (list): A list of event objects returned by the ESPN scoreboard API.
-        
+
         Returns:
             list[GameOdds]: A list of normalized game dictionaries each containing:
                 - date: formatted event date string
@@ -241,7 +241,7 @@ class EspnOddsScraper:
                     }
                 )
             except (KeyError, IndexError, ValueError, AttributeError, TypeError) as error:
-                logger.warning('Failed to parse ESPN scoreboard event: %s', error)
+                logger.warning('Failed to parse ESPN scoreboard event: {}', error)
                 continue
 
         return games

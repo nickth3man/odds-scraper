@@ -36,9 +36,9 @@ class GameOdds(TypedDict, total=False):
 def extract_first_signed_number(text: str) -> str | None:
     """
     Extracts the first standalone signed integer or decimal number from a string.
-    
+
     Searches for an optional leading `+` or `-` followed by digits with an optional decimal part, ensuring the match is not part of a larger numeric sequence.
-    
+
     Returns:
         The matched numeric substring (including sign and decimal point) as a `str`, or `None` if no such number is found.
     """
@@ -63,10 +63,10 @@ def extract_first_total(text: str) -> str | None:
 def format_american_odds(value: str | int | float | None) -> str:
     """
     Format an odds value into a canonical American-odds string.
-    
+
     Parameters:
         value (str | int | float | None): Odds expressed as a number or numeric string, or None when missing.
-    
+
     Returns:
         str: `'N/A'` if `value` is None; otherwise a stringified odds value with a leading `+` for positive integers, or the original string form when conversion to int fails.
     """

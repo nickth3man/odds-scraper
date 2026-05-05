@@ -52,14 +52,14 @@ def enrich_live_odds_rows(
 ) -> list[dict]:
     """
     Enrich scraper game mappings with expected-value columns and optional model-derived team data.
-    
+
     When provided, `enrichment_service` is used to fetch team stats; if stats for both teams are available the function derives an effective win probability and adds model-derived fields (home_win_pct, away_win_pct, home_off_rating, home_def_rating, away_off_rating, away_def_rating, home_record, away_record, model_probability_source='nba_api'). If stats are missing for either team the row receives model_probability_source='manual_slider'. If `enrichment_service` is not provided no model-derived fields or probability source are added. In all cases the function adds `expected_value_per_100` and `home_expected_value_per_100` computed using the effective probability.
-    
+
     Parameters:
         games: Sequence of game mappings produced by a scraper.
-        model_probability: Fallback win probability (0.0–1.0) used when model-derived probability is not available.
+        model_probability: Fallback win probability (0.0-1.0) used when model-derived probability is not available.
         enrichment_service: Optional service used to obtain team statistics; when None no enrichment is attempted.
-    
+
     Returns:
         List[dict]: A list of enriched row dictionaries containing the original game data plus EV columns and, when available, model-derived team fields.
     """
@@ -99,7 +99,6 @@ def enrich_live_odds_rows(
 def recompute_expected_value(
     rows: list[dict],
     model_probability: float,
-    enrichment_service: TeamEnrichmentService | None = None,
 ) -> list[dict]:
     """Re-compute EV columns for existing table rows using a new probability.
 
@@ -136,16 +135,16 @@ def merge_source_rows(
 ) -> list[dict]:
     """
     Merge freshly scraped games for a given source into the existing table rows.
-    
+
     Preserves rows from other sources (their EV values are recomputed using the provided model_probability) and replaces rows whose `source` matches the given `source` with the newly enriched game rows.
-    
+
     Parameters:
         existing_rows (list[dict]): Current rows in the odds table.
         games (Sequence[Mapping[str, object]]): Newly scraped game mappings to insert for `source`.
         source (str): Identifier of the sportsbook or feed being refreshed (e.g., "ESPN").
-        model_probability (float): Base win probability (0.0–1.0) used to recompute expected value columns for preserved rows and to compute EV for new rows.
+        model_probability (float): Base win probability (0.0-1.0) used to recompute expected value columns for preserved rows and to compute EV for new rows.
         enrichment_service (TeamEnrichmentService | None): Optional service used when enriching newly scraped games; when provided, team stats may be used to derive an effective model probability for those games.
-    
+
     Returns:
         list[dict]: Combined list of preserved (recomputed) rows from other sources followed by enriched rows for `source`, suitable for table update.
     """

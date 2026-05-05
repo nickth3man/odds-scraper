@@ -20,14 +20,14 @@ def _make_stats(
 ) -> TeamStats:
     """
     Create a TeamStats instance for tests with sensible default ratings and record fields.
-    
+
     Parameters:
         team (str): Full team name; `abbreviation` will be the first three characters uppercased.
         net (float): Net rating to assign to `net_rating`; `def_rating` is set to 110.0 - net.
         win_pct (float): Team winning percentage.
         wins (int): Number of wins.
         losses (int): Number of losses.
-    
+
     Returns:
         TeamStats: A TeamStats object populated with the provided values and fixed defaults for
         `off_rating`, `pace`, `recent_wins`, and `recent_losses`.
@@ -141,7 +141,7 @@ class TestTeamEnrichmentServiceWithCache:
     def test_get_team_stats_empty_cache_returns_none(self) -> None:
         """
         Verify TeamEnrichmentService.get_team_stats behavior when the internal cache is empty and no API call is performed.
-        
+
         Asserts that the method yields `None` in this scenario without performing network requests.
         """
         service = TeamEnrichmentService(cache_ttl=9999.0)

@@ -68,10 +68,19 @@ class TeamEnrichmentService:
     to avoid hitting stats.nba.com on every scrape cycle.
     """
 
+    @staticmethod
+    def _current_nba_season() -> str:
+        """Compute the current NBA season string based on today's date."""
+        from datetime import date
+
+        today = date.today()
+        start_year = today.year if today.month >= 10 else today.year - 1
+        return f'{start_year}-{str(start_year + 1)[2:]}'
+
     def __init__(self, cache_ttl: float = 14400.0):
         """
         Initialize the TeamEnrichmentService and create a TTL cache for team statistics.
-        
+
         Parameters:
             cache_ttl (float): Time-to-live for cached entries in seconds; defaults to 14400.0 (4 hours).
         """
@@ -80,10 +89,10 @@ class TeamEnrichmentService:
     def get_team_stats(self, team_name: str) -> TeamStats | None:
         """
         Retrieve aggregated TeamStats for a team given a team name.
-        
+
         Parameters:
             team_name (str): Team display name (or substring). The function will attempt an exact name-to-abbreviation resolution and, if that fails, fall back to a substring match against known team display names.
-        
+
         Returns:
             TeamStats | None: The matching TeamStats instance if found, `None` otherwise.
         """
@@ -102,9 +111,9 @@ class TeamEnrichmentService:
     def _get_all_team_stats(self) -> dict[str, TeamStats] | None:
         """
         Retrieve all team statistics, preferring cached results when available.
-        
+
         Checks the internal cache key 'all_teams' and returns it if present; otherwise attempts to fetch fresh data from the NBA API. Returns `None` if fetching fails.
-        
+
         Returns:
             dict[str, TeamStats] | None: Mapping from team three-letter abbreviation to `TeamStats`, or `None` if retrieval failed.
         """
@@ -120,7 +129,7 @@ class TeamEnrichmentService:
     def _fetch_from_nba_api(self) -> dict[str, TeamStats]:
         """
         Fetches current NBA team advanced statistics and standings from stats.nba.com, combines them into TeamStats objects, caches the result under 'all_teams', and returns a mapping keyed by team abbreviation.
-        
+
         Returns:
             dict[str, TeamStats]: Mapping from three-letter team abbreviation (e.g., "LAL") to the corresponding TeamStats instance.
         """
@@ -131,7 +140,7 @@ class TeamEnrichmentService:
 
         advanced = leaguedashteamstats.LeagueDashTeamStats(
             measure_type_detailed_defense='Advanced',
-            season='2025-26',
+            season=self._current_nba_season(),
             season_type_all_star='Regular Season',
         )
         advanced_rows = advanced.get_dict()['resultSets'][0]['rowSet']
@@ -157,7 +166,7 @@ class TeamEnrichmentService:
             }
 
         standings = leaguestandings.LeagueStandings(
-            season='2025-26',
+            season=self._current_nba_season(),
             season_type='Regular Season',
         )
         standings_rows = standings.get_dict()['resultSets'][0]['rowSet']
@@ -166,11 +175,10 @@ class TeamEnrichmentService:
         w_idx = standings_headers.index('WINS')
         l_idx = standings_headers.index('LOSSES')
         wp_idx = standings_headers.index('WinPct')
-        ts_idx = standings_headers.index('TeamSlug')
+        tid_idx = standings_headers.index('TeamID')
 
         for row in standings_rows:
-            slug: str = row[ts_idx]
-            abbr = slug.split('-')[-1].upper()
+            abbr = row[tid_idx]
             advances = advanced_data.get(abbr, {})
             stats_dict[abbr] = TeamStats(
                 team_name=advances.get('team_name', abbr),

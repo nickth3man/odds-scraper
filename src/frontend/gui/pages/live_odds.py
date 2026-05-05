@@ -98,7 +98,7 @@ def live_odds() -> None:
         async def scrape_draftkings() -> None:
             """
             Scrape live DraftKings odds and merge the results into the page's table using the current model probability and enrichment.
-            
+
             This updates the UI state: disables the DraftKings button while running, sets the status text to indicate progress or error, and replaces the table rows with the merged/enriched rows on success. No value is returned.
             """
             draftkings_button.disable()

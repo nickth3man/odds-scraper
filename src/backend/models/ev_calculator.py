@@ -116,7 +116,7 @@ class EVCalculator:
     def display_bet_analysis(self, bets: list[dict]):
         """
         Log a concise debug summary for a list of bet evaluation dictionaries.
-        
+
         Parameters:
             bets (list[dict]): List of bet result dictionaries as produced by `evaluate_bet`. Each dictionary is expected to contain the keys: 'team', 'model_probability', 'american_odds', 'expected_value_per_stake', and 'recommendation'.
         """
