@@ -47,7 +47,18 @@ class LiveOddsScraper:
     # ============ EXPORT & DISPLAY ============
 
     def export_to_csv(self, games, filename='data/live_odds.csv'):
-        """Export live odds to CSV."""
+        """
+        Write a list of game odds to a CSV file.
+        
+        If `games` is empty or falsey, the function returns `None`. Otherwise the games are converted to a pandas DataFrame and written to `filename`.
+        
+        Parameters:
+            games (list|iterable): Iterable of game odds objects or dicts to export.
+            filename (str): Filesystem path where the CSV will be written. Defaults to 'data/live_odds.csv'.
+        
+        Returns:
+            pandas.DataFrame or None: A DataFrame containing the exported games, or `None` if `games` was empty.
+        """
         if not games:
             logger.warning('No games to export')
             return None
@@ -61,7 +72,13 @@ class LiveOddsScraper:
         return games_table
 
     def display_games(self, games, source=''):
-        """Display games in a formatted table."""
+        """
+        Logs a formatted table of game odds at debug level.
+        
+        Parameters:
+            games (Iterable[dict|GameOdds]): Sequence of game records to display; each item will be converted to a pandas DataFrame row.
+            source (str): Optional source label included in the log context (e.g., "ESPN", "DRAFTKINGS").
+        """
         if not games:
             return
 
@@ -75,7 +92,14 @@ class LiveOddsScraper:
         )
 
     def get_all_games(self):
-        """Scrape both ESPN and DraftKings."""
+        """
+        Orchestrates scraping of NBA odds from ESPN and DraftKings and aggregates the results.
+        
+        Resets the internal games list, runs each source scraper, conditionally displays each source's results, and logs scraping activity within a per-run `scrape_session` context attached to log entries.
+        
+        Returns:
+            list[GameOdds]: Aggregated list of scraped games (may be empty).
+        """
         session_id = uuid.uuid4().hex[:8]
         with logger.contextualize(scrape_session=session_id):
             logger.info('Scraping all sources', action='fetch_all')

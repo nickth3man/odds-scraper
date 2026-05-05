@@ -69,10 +69,24 @@ class TeamEnrichmentService:
     """
 
     def __init__(self, cache_ttl: float = 14400.0):
+        """
+        Initialize the TeamEnrichmentService and create a TTL cache for team statistics.
+        
+        Parameters:
+            cache_ttl (float): Time-to-live for cached entries in seconds; defaults to 14400.0 (4 hours).
+        """
         self._cache: TTLCache[dict[str, TeamStats]] = TTLCache(default_ttl=cache_ttl)
 
     def get_team_stats(self, team_name: str) -> TeamStats | None:
-        """Look up stats for a team by display name."""
+        """
+        Retrieve aggregated TeamStats for a team given a team name.
+        
+        Parameters:
+            team_name (str): Team display name (or substring). The function will attempt an exact name-to-abbreviation resolution and, if that fails, fall back to a substring match against known team display names.
+        
+        Returns:
+            TeamStats | None: The matching TeamStats instance if found, `None` otherwise.
+        """
         all_stats = self._get_all_team_stats()
         if all_stats is None:
             return None
@@ -86,7 +100,14 @@ class TeamEnrichmentService:
         return None
 
     def _get_all_team_stats(self) -> dict[str, TeamStats] | None:
-        """Fetch all team stats from cache or nba_api."""
+        """
+        Retrieve all team statistics, preferring cached results when available.
+        
+        Checks the internal cache key 'all_teams' and returns it if present; otherwise attempts to fetch fresh data from the NBA API. Returns `None` if fetching fails.
+        
+        Returns:
+            dict[str, TeamStats] | None: Mapping from team three-letter abbreviation to `TeamStats`, or `None` if retrieval failed.
+        """
         cached = self._cache.get('all_teams')
         if cached is not None:
             return cached
@@ -97,7 +118,12 @@ class TeamEnrichmentService:
             return None
 
     def _fetch_from_nba_api(self) -> dict[str, TeamStats]:
-        """Live fetch from stats.nba.com. Raises on network failure."""
+        """
+        Fetches current NBA team advanced statistics and standings from stats.nba.com, combines them into TeamStats objects, caches the result under 'all_teams', and returns a mapping keyed by team abbreviation.
+        
+        Returns:
+            dict[str, TeamStats]: Mapping from three-letter team abbreviation (e.g., "LAL") to the corresponding TeamStats instance.
+        """
         from nba_api.stats.endpoints import leaguedashteamstats, leaguestandings
 
         logger.info('Fetching team stats from nba_api', action='fetch')

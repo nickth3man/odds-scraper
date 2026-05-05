@@ -296,7 +296,14 @@ class DraftKingsScraper:
 
     @staticmethod
     def _cleanup(session: _BrowserSession | None) -> None:
-        """Clean up Playwright resources from leaf objects back to the driver."""
+        """
+        Close the Playwright page, context, and browser for the given session, then stop the Playwright driver.
+        
+        If `session` is `None` this is a no-op. Failures while closing individual resources are logged as warnings; the Playwright driver is stopped after attempting to close resources.
+        
+        Parameters:
+            session (_BrowserSession | None): Playwright resources to clean up.
+        """
         if session is None:
             return
         for resource_name, resource in (
@@ -312,11 +319,11 @@ class DraftKingsScraper:
 
     @logger.catch
     def scrape_odds(self) -> list[GameOdds]:
-        """Scrape live odds from DraftKings using Playwright.
-
-        Playwright launches a stealth-configured Chromium browser, navigates
-        to DraftKings, waits for the game table to load, then passes the page
-        to parse_games() for HTML extraction.
+        """
+        Fetch current NBA game odds from DraftKings and parse them into GameOdds entries.
+        
+        Returns:
+            list[GameOdds]: A list of parsed GameOdds objects for each found game, or an empty list if no games were found or if an error/timeout occurred.
         """
         logger.info('Fetching live odds', source='DraftKings', action='fetch')
 
@@ -366,10 +373,16 @@ class DraftKingsScraper:
 
     @logger.catch
     def scrape_futures_champion(self) -> list[dict]:
-        """Scrape DraftKings futures champion odds using Playwright.
-
-        Navigates to ?category=futures&subcategory=champion and parses
-        team names with American championship odds.
+        """
+        Fetches DraftKings champion futures odds and returns them as structured rows.
+        
+        Navigates to the DraftKings champion futures page and parses available entries into
+        a list of dictionaries containing team names and their American odds. On page-load
+        timeout or other failures this function returns an empty list.
+        
+        Returns:
+            results (list[dict]): A list of rows with keys `team` (str), `odds` (str, American odds or 'N/A'),
+                `bet_type` (str, 'champion'), and `source` (str, 'DraftKings').
         """
         logger.info('Fetching futures champion odds', source='DraftKings', action='fetch')
 

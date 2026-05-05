@@ -338,6 +338,16 @@ def test_scrape_espn_nba_odds_returns_empty_when_header_api_has_no_games(
     scraper = EspnOddsScraper()
 
     def return_empty_sports(*_args, **_kwargs):
+        """
+        Produce a fake HTTP JSON response containing an empty `sports` list for tests.
+        
+        Parameters:
+            *_args: Ignored.
+            **_kwargs: Ignored.
+        
+        Returns:
+            _JsonResponse: A response whose JSON payload is {'sports': []}.
+        """
         return _JsonResponse({'sports': []})
 
     monkeypatch.setattr(
@@ -385,6 +395,12 @@ def test_scrape_scoreboard_fallback_returns_empty_on_fetch_error(
     scraper = EspnOddsScraper()
 
     def raise_bad_payload(*_args, **_kwargs):
+        """
+        Always raises a ValueError indicating a bad payload.
+        
+        Raises:
+            ValueError: with message 'bad payload'.
+        """
         raise ValueError('bad payload')
 
     monkeypatch.setattr(
@@ -403,6 +419,12 @@ def test_scrape_scoreboard_fallback_returns_empty_when_no_games(
     scraper = EspnOddsScraper()
 
     def return_empty_events(*_args, **_kwargs):
+        """
+        Create a fake JSON HTTP response representing no events.
+        
+        This test helper ignores any positional or keyword arguments and returns an _JsonResponse
+        whose JSON payload is {'events': []}.
+        """
         return _JsonResponse({'events': []})
 
     monkeypatch.setattr(

@@ -216,7 +216,12 @@ class HttpClient:
         return urlparse(url).netloc
 
     def _wait_for_domain(self, domain: str) -> None:
-        """Sleep if *domain* was accessed too recently."""
+        """
+        Ensure at least _min_delay seconds have elapsed since the last recorded request for the given domain by sleeping for the remaining time when necessary.
+        
+        Parameters:
+            domain (str): Effective domain key used for per-domain rate limiting.
+        """
         if domain not in self._domain_timestamps:
             return
         elapsed = time.monotonic() - self._domain_timestamps[domain]
@@ -227,7 +232,18 @@ class HttpClient:
 
     @staticmethod
     def _log_retry_attempt(retry_state) -> None:
-        """Callback invoked by tenacity before each retry sleep."""
+        """
+        Log a warning before tenacity sleeps between retry attempts.
+        
+        Extracts the attempt number and the exception (when present) from the provided
+        tenacity retry state and logs a warning containing the attempt number, the
+        configured maximum attempts, the exception type name, and the exception value.
+        
+        Parameters:
+            retry_state (tenacity.RetryCallState): The tenacity retry state passed to
+                callback handlers; used to obtain attempt_number, outcome/exception,
+                and the retry object's configured stop/max attempts.
+        """
         attempt = retry_state.attempt_number
         exception = retry_state.outcome.exception() if retry_state.outcome else None
         logger.warning(

@@ -21,7 +21,9 @@ class TestInterceptHandler:
         assert 'hello from stdlib' in captured.err
 
     def test_stdlib_warnings_also_captured(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """stdlib warning messages are also captured by InterceptHandler."""
+        """
+        Verify that warning-level messages logged via the standard library appear on stderr (redirected to Loguru output).
+        """
         configure_logging(level='DEBUG', json_file=False)
         logging.getLogger('test.warnings').warning('this is a test warning')
         captured = capsys.readouterr()
@@ -64,14 +66,18 @@ class TestLoguruImports:
     """Verify key modules use loguru instead of stdlib logging."""
 
     def test_espn_scraper_uses_loguru(self) -> None:
-        """EspnOddsScraper module imports from loguru."""
+        """
+        Check that backend.scrapers.espn.scraper imports `logger` from Loguru.
+        """
         from backend.scrapers.espn import scraper as mod
 
         source = __import__('inspect').getsource(mod)
         assert 'from loguru import logger' in source
 
     def test_orchestrator_uses_loguru(self) -> None:
-        """LiveOddsScraper module imports from loguru."""
+        """
+        Asserts that the orchestrator scraper module imports Loguru's `logger`.
+        """
         from backend.scrapers import orchestrator as mod
 
         source = __import__('inspect').getsource(mod)

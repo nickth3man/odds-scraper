@@ -6,10 +6,15 @@ from .team_stats import TeamStats
 
 
 def compute_model_probability(home_stats: TeamStats, away_stats: TeamStats) -> float:
-    """Estimate home team win probability from team stats.
-
-    Uses a simplified logistic approach based on net rating differential
-    with a standard 3-point home court advantage.
+    """
+    Estimate the home team's win probability using net-rating and recent win percentages.
+    
+    Parameters:
+        home_stats (TeamStats): Home team statistics; must provide `net_rating` and `win_pct`.
+        away_stats (TeamStats): Away team statistics; must provide `net_rating` and `win_pct`.
+    
+    Returns:
+        probability (float): Estimated home win probability constrained to the interval [0.01, 0.99] and rounded to 4 decimal places.
     """
     home_advantage = 3.0
     home_net = home_stats.net_rating + home_advantage

@@ -20,6 +20,14 @@ class InterceptHandler(logging.Handler):
     """Redirect stdlib logging records into loguru."""
 
     def emit(self, record: logging.LogRecord) -> None:
+        """
+        Forward a standard-library LogRecord into Loguru, preserving level and origin.
+        
+        Attempts to map the record's level name to a Loguru level and falls back to the numeric level if unknown. Computes a call-stack depth that skips frames originating from the standard `logging` module so Loguru reports the original call site, and forwards the message and any exception information to Loguru.
+        
+        Parameters:
+            record (logging.LogRecord): The standard-library log record to forward into Loguru.
+        """
         try:
             level = logger.level(record.levelname).name
         except ValueError:
@@ -41,7 +49,17 @@ def configure_logging(
     rotation: str = '1 day',
     retention: str = '7 days',
 ) -> None:
-    """Initialize loguru sinks. Call once at app startup."""
+    """
+    Configure Loguru and standard-library logging for the application.
+    
+    Sets up a colored, human-readable console sink; optionally adds a daily-rotated, compressed JSONL file sink under the module's logs directory; installs the InterceptHandler so stdlib `logging` records are routed into Loguru; and raises the log level for noisy third-party libraries. Call once at application startup.
+    
+    Parameters:
+    	level (str): Minimum log level for the console sink (e.g., 'DEBUG', 'INFO').
+    	json_file (bool): If True, enable writing structured JSONL logs to files.
+    	rotation (str): Loguru rotation policy for the file sink (e.g., '1 day', '100 MB').
+    	retention (str): Loguru retention policy for the file sink (e.g., '7 days', '30 days').
+    """
     logger.remove()
 
     logger.add(

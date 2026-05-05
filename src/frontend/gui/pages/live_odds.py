@@ -96,7 +96,11 @@ def live_odds() -> None:
                 espn_button.enable()
 
         async def scrape_draftkings() -> None:
-            """Scrape DraftKings odds and merge them into the live table."""
+            """
+            Scrape live DraftKings odds and merge the results into the page's table using the current model probability and enrichment.
+            
+            This updates the UI state: disables the DraftKings button while running, sets the status text to indicate progress or error, and replaces the table rows with the merged/enriched rows on success. No value is returned.
+            """
             draftkings_button.disable()
             status.text = 'Fetching DraftKings odds (Playwright)...'
             try:
