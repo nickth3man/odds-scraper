@@ -1,5 +1,5 @@
 language: en-US
-early_access: false
+early_access: true
 enable_free_tier: true
 
 tone_instructions: >-
