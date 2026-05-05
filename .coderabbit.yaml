@@ -1,6 +1,5 @@
 language: en-US
 early_access: true
-enable_free_tier: true
 
 tone_instructions: >-
   Be direct, practical, and specific. Provide actionable code snippets. Prioritize correctness, 
@@ -10,7 +9,10 @@ tone_instructions: >-
   `from __future__ import annotations`.
 
 reviews:
-  profile: chill
+  profile: assertive
+  abort_on_close: true
+  suggested_labels: true
+  auto_apply_labels: true
   request_changes_workflow: false
   high_level_summary: true
   high_level_summary_placeholder: '@coderabbitai summary'
@@ -25,6 +27,9 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
+    ignore_title_keywords:
+      - "WIP"
+      - "DO NOT MERGE"
     base_branches:
       - main
   path_filters:
@@ -85,6 +90,8 @@ reviews:
         Review dependency changes. Flag any new dependencies that are paid SaaS products, databases, 
         or unnecessarily bloat the package. Ensure strict version constraints are reasonable.
   tools:
+    semgrep:
+      enabled: true
     ruff:
       enabled: true
     markdownlint:
@@ -128,4 +135,7 @@ code_generation:
     path: tests
 
 issue_enrichment:
-  mode: auto
+  auto_enrich: true
+  planning: true
+  auto_planning: true
+  labeling: true
