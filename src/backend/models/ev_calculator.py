@@ -1,5 +1,6 @@
-from backend.models.domain import Market, NormalizedOdds
 from loguru import logger
+
+from backend.models.domain import Market, NormalizedOdds
 
 
 class EVCalculator:
@@ -149,11 +150,11 @@ def devig_market(market: Market) -> list[float]:
     """
     if not market.outcomes:
         return []
-        
+
     implied_probs = [outcome.price.implied_probability for outcome in market.outcomes]
     total_implied = sum(implied_probs)
-    
+
     if total_implied == 0:
         return [0.0] * len(market.outcomes)
-        
+
     return [p / total_implied for p in implied_probs]
