@@ -37,7 +37,7 @@ class TestOddsScraper:
         markets = scraper.scrape_espn_odds()
         assert isinstance(markets, list)
         assert all(isinstance(m, Market) for m in markets)
-        # 2 games × 3 market types (h2h, spreads, totals) = 6
+        # 2 games x 3 market types (h2h, spreads, totals) = 6
         assert len(markets) == 6
 
     def test_scrape_espn_odds_has_required_market_types(self):

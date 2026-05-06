@@ -280,14 +280,12 @@ def test_parse_espn_header_api_fixture():
 
     markets = scraper.parse_header_events(events)
 
-    # 3 events × 3 market types = 9 markets
+    # 3 events x 3 market types = 9 markets
     assert len(markets) == 9
 
     # Helper to find markets by event_id
     def find(event_id: str, mtype: MarketType) -> Market:
-        return next(
-            m for m in markets if m.event_id == event_id and m.market_type == mtype
-        )
+        return next(m for m in markets if m.event_id == event_id and m.market_type == mtype)
 
     # DET @ ORL -- away (DET) favored by 3.5
     det_orl_h2h = find('401869417', MarketType.H2H)
@@ -342,7 +340,7 @@ def test_parse_espn_scoreboard_api_fixture():
 
     markets = scraper.parse_scoreboard_events(events)
 
-    # 1 event × 3 market types = 3 markets
+    # 1 event x 3 market types = 3 markets
     assert len(markets) == 3
 
     def find(mtype: MarketType) -> Market:
