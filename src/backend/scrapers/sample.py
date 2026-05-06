@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 
 import pandas as pd
+from loguru import logger
 
 
 class OddsScraper:
@@ -14,17 +15,42 @@ class OddsScraper:
         self.timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
     def load_config(self, config_file):
-        """Load configuration from JSON file"""
+        """
+        Load JSON configuration from the given file path.
+
+        If the file does not exist, logs a warning and returns an empty dictionary.
+
+        Parameters:
+            config_file (str): Path to the JSON configuration file.
+
+        Returns:
+            dict: Parsed configuration object from the file, or an empty dict if the file was not found.
+        """
         try:
             with open(config_file) as f:
                 return json.load(f)
         except FileNotFoundError:
-            print(f'Config file not found: {config_file}')
+            logger.warning('Config file not found', path=config_file)
             return {}
 
     def scrape_espn_odds(self):
-        """Scrape NBA odds from ESPN"""
-        print('Scraping ESPN odds...')
+        """
+        Return a list of sample NBA odds from ESPN.
+
+        Each item in the returned list is a dictionary representing a single game's odds with the following keys:
+        - `game_id` (int): Unique identifier for the game.
+        - `date` (str): Game date in ISO format (YYYY-MM-DD).
+        - `team` (str): The team the odds apply to.
+        - `opponent` (str): The opposing team.
+        - `moneyline` (int): Moneyline odds for the team.
+        - `spread` (float): Point spread for the team (negative for favored).
+        - `over_under` (float): Total points line for the game.
+        - `sportsbook` (str): Source sportsbook name (`"ESPN"`).
+
+        Returns:
+            list[dict]: A list of ESPN odds dictionaries as described above.
+        """
+        logger.info('Scraping odds', sportsbook='ESPN')
 
         # Sample NBA odds data for 2025-26 season
         espn_odds = [
@@ -73,8 +99,15 @@ class OddsScraper:
         return espn_odds
 
     def scrape_draftkings_odds(self):
-        """Scrape NBA odds from DraftKings"""
-        print('Scraping DraftKings odds...')
+        """
+        Return a list of sample NBA odds entries representing DraftKings sportsbook data.
+
+        Each list item is a dictionary describing a game's odds with keys such as `game_id`, `date`, `team`, `opponent`, `moneyline`, `spread`, `over_under`, and `sportsbook`.
+
+        Returns:
+            draftkings_odds (list[dict]): Sample DraftKings odds for multiple games.
+        """
+        logger.info('Scraping odds', sportsbook='DraftKings')
 
         # Sample DraftKings odds (slightly different lines)
         draftkings_odds = [
@@ -123,8 +156,14 @@ class OddsScraper:
         return draftkings_odds
 
     def scrape_fanduel_odds(self):
-        """Scrape NBA odds from FanDuel"""
-        print('Scraping FanDuel odds...')
+        """
+        Return sample FanDuel NBA odds for use by the scraper.
+
+        Returns:
+            fanduel_odds (list[dict]): A list of dictionaries, each representing odds for a single game with keys
+            'game_id', 'date', 'team', 'opponent', 'moneyline', 'spread', 'over_under', and 'sportsbook'.
+        """
+        logger.info('Scraping odds', sportsbook='FanDuel')
 
         # Sample FanDuel odds
         fanduel_odds = [
@@ -189,13 +228,18 @@ class OddsScraper:
         return all_odds
 
     def export_to_csv(self, filename='data/sample_odds_data.csv'):
-        """Export scraped odds to CSV file"""
+        """
+        Write the currently scraped odds to a CSV file.
+
+        If no odds have been scraped, logs a warning and does not create a file. Otherwise converts the stored odds into a pandas DataFrame and writes it to the given path with no index, then logs the output filename and number of records.
+
+        Parameters:
+            filename (str): Path to write the CSV file. Defaults to 'data/sample_odds_data.csv'.
+        """
         if not self.scraped_odds:
-            print('No odds to export. Run get_all_odds() first.')
+            logger.warning('No odds to export')
             return
 
         odds_table = pd.DataFrame(self.scraped_odds)
         odds_table.to_csv(filename, index=False)
-        print(f'[OK] Odds exported to {filename}')
-        print(f'  Total records: {len(odds_table)}')
-        print(f'  Sportsbooks: {odds_table["sportsbook"].unique().tolist()}')
+        logger.info('Sample odds exported', filename=filename, record_count=len(odds_table))

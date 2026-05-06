@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from nicegui import APIRouter, run, ui
 
+from backend.enrichment import TeamEnrichmentService
 from backend.models.odds_enrichment import merge_source_rows, recompute_expected_value
 from backend.scrapers import LiveOddsScraper
 from backend.scrapers.espn import EspnOddsScraper
@@ -26,6 +27,9 @@ COLUMNS = [
         'field': 'home_expected_value_per_100',
     },
     {'name': 'source', 'label': 'Source', 'field': 'source', 'sortable': True},
+    {'name': 'home_record', 'label': 'Record (H)', 'field': 'home_record'},
+    {'name': 'away_record', 'label': 'Record (A)', 'field': 'away_record'},
+    {'name': 'home_win_pct', 'label': 'Win% (Model)', 'field': 'home_win_pct'},
 ]
 
 SOURCE_BADGE_SLOT = """
@@ -43,6 +47,8 @@ def live_odds() -> None:
     for EV computation, and a searchable table with per-row expected-value
     enrichment for both away and home moneylines.
     """
+    enrichment = TeamEnrichmentService()
+
     with ui.column().classes('w-full p-6 gap-4'):
         with ui.row().classes('items-center gap-2'):
             ui.button(icon='arrow_back', on_click=lambda: ui.navigate.to('/')).props('flat round')
@@ -79,7 +85,10 @@ def live_odds() -> None:
             try:
                 scraper = EspnOddsScraper()
                 games = await run.io_bound(scraper.scrape_nba_odds)
-                rows = merge_source_rows(table.rows, games, 'ESPN', current_model_probability())
+                prob = current_model_probability()
+                rows = await run.io_bound(
+                    merge_source_rows, list(table.rows), games, 'ESPN', prob, enrichment
+                )
                 table.update_rows(rows)
                 status.text = f'Loaded {len(games)} ESPN games.'
             except Exception:
@@ -88,14 +97,19 @@ def live_odds() -> None:
                 espn_button.enable()
 
         async def scrape_draftkings() -> None:
-            """Scrape DraftKings odds and merge them into the live table."""
+            """
+            Scrape live DraftKings odds and merge the results into the page's table using the current model probability and enrichment.
+
+            This updates the UI state: disables the DraftKings button while running, sets the status text to indicate progress or error, and replaces the table rows with the merged/enriched rows on success. No value is returned.
+            """
             draftkings_button.disable()
             status.text = 'Fetching DraftKings odds (Playwright)...'
             try:
                 scraper = LiveOddsScraper()
                 games = await run.io_bound(scraper.scrape_draftkings_odds)
-                rows = merge_source_rows(
-                    table.rows, games, 'DraftKings', current_model_probability()
+                prob = current_model_probability()
+                rows = await run.io_bound(
+                    merge_source_rows, list(table.rows), games, 'DraftKings', prob, enrichment
                 )
                 table.update_rows(rows)
                 status.text = f'Loaded {len(games)} DraftKings games.'
@@ -104,13 +118,14 @@ def live_odds() -> None:
             finally:
                 draftkings_button.enable()
 
-        model_probability.on_value_change(
-            lambda _e: (
-                table.update_rows(recompute_expected_value(table.rows, current_model_probability()))
-                if table.rows
-                else None
-            )
-        )
+        async def on_probability_change(_e: object) -> None:
+            if table.rows:
+                updated = await run.io_bound(
+                    recompute_expected_value, list(table.rows), current_model_probability()
+                )
+                table.update_rows(updated)
+
+        model_probability.on_value_change(on_probability_change)
 
         espn_button.on_click(scrape_espn)
         draftkings_button.on_click(scrape_draftkings)

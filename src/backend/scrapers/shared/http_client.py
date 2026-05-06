@@ -7,7 +7,6 @@ delays to avoid overloading upstream APIs.
 
 from __future__ import annotations
 
-import logging
 import time
 from collections.abc import Callable
 from importlib import import_module
@@ -16,6 +15,7 @@ from urllib.parse import urlparse
 
 import httpx
 from courlan.urlutils import get_hostinfo
+from loguru import logger
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -45,8 +45,6 @@ except ImportError:  # pragma: no cover
     _curl_get = None
     _CURL_TRANSIENT_EXCEPTIONS: tuple[type[Exception], ...] = ()
     _CURL_AVAILABLE = False
-
-logger = logging.getLogger(__name__)
 
 
 class _FallbackUserAgent:
@@ -218,22 +216,38 @@ class HttpClient:
         return urlparse(url).netloc
 
     def _wait_for_domain(self, domain: str) -> None:
-        """Sleep if *domain* was accessed too recently."""
+        """
+        Ensure at least _min_delay seconds have elapsed since the last recorded request for the given domain by sleeping for the remaining time when necessary.
+
+        Parameters:
+            domain (str): Effective domain key used for per-domain rate limiting.
+        """
         if domain not in self._domain_timestamps:
             return
         elapsed = time.monotonic() - self._domain_timestamps[domain]
         wait_time = self._min_delay - elapsed
         if wait_time > 0:
-            logger.debug('Rate limiting %s: sleeping %.2fs', domain, wait_time)
+            logger.debug('Rate limiting {}: sleeping {:.2f}s', domain, wait_time)
             time.sleep(wait_time)
 
     @staticmethod
     def _log_retry_attempt(retry_state) -> None:
-        """Callback invoked by tenacity before each retry sleep."""
+        """
+        Log a warning before tenacity sleeps between retry attempts.
+
+        Extracts the attempt number and the exception (when present) from the provided
+        tenacity retry state and logs a warning containing the attempt number, the
+        configured maximum attempts, the exception type name, and the exception value.
+
+        Parameters:
+            retry_state (tenacity.RetryCallState): The tenacity retry state passed to
+                callback handlers; used to obtain attempt_number, outcome/exception,
+                and the retry object's configured stop/max attempts.
+        """
         attempt = retry_state.attempt_number
         exception = retry_state.outcome.exception() if retry_state.outcome else None
         logger.warning(
-            'HTTP retry %d/%d — %s: %s',
+            'HTTP retry {}/{} — {}: {}',
             attempt,
             retry_state.retry_object.stop.max_attempt_number,  # type: ignore[union-attr]
             type(exception).__name__ if exception else 'unknown',

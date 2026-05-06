@@ -29,9 +29,9 @@ Thumbs.db
 
 # Data files (optional - comment out if you want to include)
 # data/*.csv
-
 # Logs
 *.log
+/logs/
 
 # Testing
 .pytest_cache/

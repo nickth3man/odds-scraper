@@ -1,13 +1,12 @@
-import logging
+import uuid
 
 import pandas as pd
+from loguru import logger
 
 from .draftkings.scraper import DraftKingsScraper
 from .espn.scraper import EspnOddsScraper
 from .shared.http_client import HttpClient
 from .shared.parsers import GameOdds
-
-logger = logging.getLogger(__name__)
 
 
 class LiveOddsScraper:
@@ -48,42 +47,70 @@ class LiveOddsScraper:
     # ============ EXPORT & DISPLAY ============
 
     def export_to_csv(self, games, filename='data/live_odds.csv'):
-        """Export live odds to CSV."""
+        """
+        Write a list of game odds to a CSV file.
+
+        If `games` is empty or falsey, the function returns `None`. Otherwise the games are converted to a pandas DataFrame and written to `filename`.
+
+        Parameters:
+            games (list|iterable): Iterable of game odds objects or dicts to export.
+            filename (str): Filesystem path where the CSV will be written. Defaults to 'data/live_odds.csv'.
+
+        Returns:
+            pandas.DataFrame or None: A DataFrame containing the exported games, or `None` if `games` was empty.
+        """
         if not games:
-            print('No games to export')
+            logger.warning('No games to export')
             return None
 
         games_table = pd.DataFrame(games)
         games_table.to_csv(filename, index=False)
-        print(f'[OK] Live odds exported to {filename}')
-        print(f'   Total games: {len(games_table)}\n')
+        logger.info(
+            'Exported live odds', filename=filename, game_count=len(games_table), action='export'
+        )
 
         return games_table
 
     def display_games(self, games, source=''):
-        """Display games in a formatted table."""
+        """
+        Logs a formatted table of game odds at debug level.
+
+        Parameters:
+            games (Iterable[dict|GameOdds]): Sequence of game records to display; each item will be converted to a pandas DataFrame row.
+            source (str): Optional source label included in the log context (e.g., "ESPN", "DRAFTKINGS").
+        """
         if not games:
             return
 
         games_table = pd.DataFrame(games)
 
-        print('=' * 100)
-        print(f'LIVE {source} GAMES')
-        print('=' * 100)
-        print(games_table.to_string(index=False))
-        print()
+        logger.debug(
+            'Displaying games',
+            source=source,
+            count=len(games),
+            table=games_table.to_string(index=False),
+        )
 
     def get_all_games(self):
-        """Scrape both ESPN and DraftKings."""
-        print('NBA Live odds from all sources\n')
-        self.games = []
+        """
+        Orchestrates scraping of NBA odds from ESPN and DraftKings and aggregates the results.
 
-        espn_games = self.scrape_espn_nba_odds()
-        if espn_games:
-            self.display_games(espn_games, 'ESPN')
+        Resets the internal games list, runs each source scraper, conditionally displays each source's results, and logs scraping activity within a per-run `scrape_session` context attached to log entries.
 
-        draftkings_games = self.scrape_draftkings_odds()
-        if draftkings_games:
-            self.display_games(draftkings_games, 'DRAFTKINGS')
+        Returns:
+            list[GameOdds]: Aggregated list of scraped games (may be empty).
+        """
+        session_id = uuid.uuid4().hex[:8]
+        with logger.contextualize(scrape_session=session_id):
+            logger.info('Scraping all sources', action='fetch_all')
+            self.games = []
 
-        return self.games
+            espn_games = self.scrape_espn_nba_odds()
+            if espn_games:
+                self.display_games(espn_games, 'ESPN')
+
+            draftkings_games = self.scrape_draftkings_odds()
+            if draftkings_games:
+                self.display_games(draftkings_games, 'DRAFTKINGS')
+
+            return self.games

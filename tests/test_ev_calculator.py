@@ -241,7 +241,7 @@ def test_kelly_criterion_negative_expected_value():
     assert kelly == 0.0
 
 
-def test_display_bet_analysis_prints_formatted_rows(capsys):
+def test_display_bet_analysis_prints_formatted_rows(capsys, loguru_to_stderr):
     calculator = EVCalculator()
 
     calculator.display_bet_analysis(
@@ -258,7 +258,6 @@ def test_display_bet_analysis_prints_formatted_rows(capsys):
         ]
     )
 
-    output = capsys.readouterr().out
-    assert 'BET ANALYSIS' in output
-    assert 'TEAM: OKC Thunder' in output
-    assert 'Recommendation:        [BET] Positive Expected Value' in output
+    output = capsys.readouterr().err
+    assert 'Bet analysis' in output
+    assert 'Bet: OKC Thunder' in output

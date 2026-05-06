@@ -8,16 +8,14 @@ not leak into each other.
 from __future__ import annotations
 
 import contextlib
-import logging
 from datetime import datetime
 
 import httpx
+from loguru import logger
 
 from ..shared.http_client import HttpClient
 from ..shared.parsers import GameOdds, format_american_odds, format_event_date, format_line
 from .config import ESPN_API_PARAMS, ESPN_API_URL, ESPN_SCOREBOARD_API_URL
-
-logger = logging.getLogger(__name__)
 
 
 class EspnOddsScraper:
@@ -27,8 +25,15 @@ class EspnOddsScraper:
         self._http = http or HttpClient()
 
     def scrape_nba_odds(self) -> list[GameOdds]:
-        """Fetch live NBA odds from ESPN's header API with scoreboard fallback."""
-        print('[Fetching] Live NBA odds from ESPN API...\n')
+        """
+        Scrape and return normalized live NBA odds from ESPN, using the header API with a scoreboard fallback.
+
+        Attempts to fetch and parse odds from ESPN's header API; if the header request or parse fails, the function falls back to the ESPN scoreboard fetch and returns its results. When the header response contains no games, an empty list is returned without attempting the fallback.
+
+        Returns:
+            list[GameOdds]: List of normalized game odds (empty list if no games are found).
+        """
+        logger.info('Fetching live NBA odds', source='ESPN', action='fetch')
 
         try:
             response = self._http.get(
@@ -43,18 +48,33 @@ class EspnOddsScraper:
             games = self.parse_header_events(events)
 
             if games:
-                print(f'[OK] ESPN: Found {len(games)} games\n')
+                logger.info(
+                    'Scrape complete', source='ESPN', game_count=len(games), action='complete'
+                )
                 return games
 
-            print('[WARN] ESPN: No upcoming games found\n')
+            logger.warning('No upcoming games found', source='ESPN')
             return []
 
         except (httpx.HTTPError, KeyError, IndexError, ValueError) as error:
-            print(f'[WARN] ESPN header API failed: {error}')
+            logger.warning(
+                'Header API failed, falling back to scoreboard', source='ESPN', error=str(error)
+            )
             return self.scrape_scoreboard_fallback()
 
     def parse_header_events(self, events: list) -> list[GameOdds]:
-        """Parse ESPN header API event objects into the live odds schema."""
+        """
+        Normalize ESPN header API event objects into a list of GameOdds dictionaries.
+
+        Each returned item contains the normalized fields: date, home_team, away_team, matchup,
+        spread, moneyline, home_moneyline, over_under, and source.
+
+        Parameters:
+            events (list): List of event objects returned by the ESPN header API.
+
+        Returns:
+            list[GameOdds]: A list of normalized game odds dictionaries following the GameOdds schema.
+        """
         games = []
 
         for event in events:
@@ -121,13 +141,18 @@ class EspnOddsScraper:
                 )
 
             except (KeyError, IndexError, ValueError, AttributeError, TypeError) as error:
-                logger.warning('Failed to parse ESPN event: %s', error)
+                logger.warning('Failed to parse ESPN event: {}', error)
                 continue
 
         return games
 
     def scrape_scoreboard_fallback(self) -> list[GameOdds]:
-        """Fetch equivalent normalized odds from ESPN's scoreboard API shape."""
+        """
+        Fetches and normalizes NBA odds from ESPN's scoreboard API.
+
+        Returns:
+            list[GameOdds]: A list of normalized game odds dictionaries parsed from the scoreboard response. Returns an empty list if no games are found or if the fetch/parse fails.
+        """
         try:
             response = self._http.get(
                 ESPN_SCOREBOARD_API_URL,
@@ -135,17 +160,37 @@ class EspnOddsScraper:
             )
             games = self.parse_scoreboard_events(response.json().get('events', []))
         except (httpx.HTTPError, ValueError, AttributeError) as error:
-            print(f'[ERROR] ESPN Error: {error}\n')
+            logger.error('Scoreboard fallback failed', source='ESPN', error=str(error))
             return []
 
         if games:
-            print(f'[OK] ESPN fallback: Found {len(games)} games\n')
+            logger.info(
+                'Fallback scrape complete', source='ESPN', game_count=len(games), action='complete'
+            )
             return games
 
-        print('[WARN] ESPN fallback: No upcoming games found\n')
+        logger.warning('Fallback: no upcoming games found', source='ESPN')
         return []
 
     def parse_scoreboard_events(self, events: list) -> list[GameOdds]:
+        """
+        Parse ESPN scoreboard API event objects into normalized GameOdds dictionaries.
+
+        Parameters:
+            events (list): A list of event objects returned by the ESPN scoreboard API.
+
+        Returns:
+            list[GameOdds]: A list of normalized game dictionaries each containing:
+                - date: formatted event date string
+                - home_team: home team display name
+                - away_team: away team display name
+                - matchup: string formatted as "Away @ Home"
+                - spread: away-team spread as a formatted string
+                - moneyline: away-team moneyline in American format
+                - home_moneyline: home-team moneyline in American format
+                - over_under: total (over/under) as a formatted string
+                - source: data source identifier (always 'ESPN')
+        """
         games = []
 
         for event in events:
@@ -196,7 +241,7 @@ class EspnOddsScraper:
                     }
                 )
             except (KeyError, IndexError, ValueError, AttributeError, TypeError) as error:
-                logger.warning('Failed to parse ESPN scoreboard event: %s', error)
+                logger.warning('Failed to parse ESPN scoreboard event: {}', error)
                 continue
 
         return games

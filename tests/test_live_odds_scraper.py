@@ -89,14 +89,14 @@ def test_parse_draftkings_html_delegates_to_scraper(monkeypatch):
     assert LiveOddsScraper.parse_draftkings_html('<html></html>') == [{'html': '<html></html>'}]
 
 
-def test_export_to_csv_returns_none_when_no_games(capsys):
+def test_export_to_csv_returns_none_when_no_games(capsys, loguru_to_stderr):
     scraper = LiveOddsScraper()
 
     assert scraper.export_to_csv([]) is None
-    assert 'No games to export' in capsys.readouterr().out
+    assert 'No games to export' in capsys.readouterr().err
 
 
-def test_export_to_csv_writes_dataframe(tmp_path, capsys):
+def test_export_to_csv_writes_dataframe(tmp_path, capsys, loguru_to_stderr):
     scraper = LiveOddsScraper()
     games = [{'matchup': 'OKC Thunder @ Boston Celtics', 'moneyline': '-135'}]
     output = tmp_path / 'live-odds.csv'
@@ -105,19 +105,18 @@ def test_export_to_csv_writes_dataframe(tmp_path, capsys):
 
     assert frame is not None
     assert output.exists()
-    printed = capsys.readouterr().out
-    assert '[OK] Live odds exported to' in printed
-    assert 'Total games: 1' in printed
+    printed = capsys.readouterr().err
+    assert 'Exported live odds' in printed
 
 
-def test_display_games_formats_table(capsys):
+def test_display_games_formats_table(capsys, loguru_to_stderr):
     scraper = LiveOddsScraper()
     games = [{'matchup': 'OKC Thunder @ Boston Celtics', 'moneyline': '-135'}]
 
     scraper.display_games(games, source='ESPN')
 
-    output = capsys.readouterr().out
-    assert 'LIVE ESPN GAMES' in output
+    output = capsys.readouterr().err
+    assert 'Displaying games' in output
     assert 'OKC Thunder @ Boston Celtics' in output
 
 
@@ -333,10 +332,22 @@ def test_select_scoreboard_odds_falls_back_to_first():
     assert selected['id'] == '1'
 
 
-def test_scrape_espn_nba_odds_returns_empty_when_header_api_has_no_games(monkeypatch, capsys):
+def test_scrape_espn_nba_odds_returns_empty_when_header_api_has_no_games(
+    monkeypatch, capsys, loguru_to_stderr
+):
     scraper = EspnOddsScraper()
 
     def return_empty_sports(*_args, **_kwargs):
+        """
+        Produce a fake HTTP JSON response containing an empty `sports` list for tests.
+
+        Parameters:
+            *_args: Ignored.
+            **_kwargs: Ignored.
+
+        Returns:
+            _JsonResponse: A response whose JSON payload is {'sports': []}.
+        """
         return _JsonResponse({'sports': []})
 
     monkeypatch.setattr(
@@ -346,10 +357,10 @@ def test_scrape_espn_nba_odds_returns_empty_when_header_api_has_no_games(monkeyp
     )
 
     assert scraper.scrape_nba_odds() == []
-    assert '[WARN] ESPN: No upcoming games found' in capsys.readouterr().out
+    assert 'No upcoming games found' in capsys.readouterr().err
 
 
-def test_parse_header_events_skips_invalid_entries_and_logs_warning(caplog):
+def test_parse_header_events_skips_invalid_entries_and_logs_warning(capsys, loguru_to_stderr):
     scraper = EspnOddsScraper()
     events = [
         {'competitors': []},
@@ -373,16 +384,23 @@ def test_parse_header_events_skips_invalid_entries_and_logs_warning(caplog):
         },
     ]
 
-    with caplog.at_level('WARNING'):
-        assert scraper.parse_header_events(events) == []
+    assert scraper.parse_header_events(events) == []
 
-    assert 'Failed to parse ESPN event' in caplog.text
+    assert 'Failed to parse ESPN event' in capsys.readouterr().err
 
 
-def test_scrape_scoreboard_fallback_returns_empty_on_fetch_error(monkeypatch, capsys):
+def test_scrape_scoreboard_fallback_returns_empty_on_fetch_error(
+    monkeypatch, capsys, loguru_to_stderr
+):
     scraper = EspnOddsScraper()
 
     def raise_bad_payload(*_args, **_kwargs):
+        """
+        Always raises a ValueError indicating a bad payload.
+
+        Raises:
+            ValueError: with message 'bad payload'.
+        """
         raise ValueError('bad payload')
 
     monkeypatch.setattr(
@@ -392,13 +410,21 @@ def test_scrape_scoreboard_fallback_returns_empty_on_fetch_error(monkeypatch, ca
     )
 
     assert scraper.scrape_scoreboard_fallback() == []
-    assert '[ERROR] ESPN Error: bad payload' in capsys.readouterr().out
+    assert 'Scoreboard fallback failed' in capsys.readouterr().err
 
 
-def test_scrape_scoreboard_fallback_returns_empty_when_no_games(monkeypatch, capsys):
+def test_scrape_scoreboard_fallback_returns_empty_when_no_games(
+    monkeypatch, capsys, loguru_to_stderr
+):
     scraper = EspnOddsScraper()
 
     def return_empty_events(*_args, **_kwargs):
+        """
+        Create a fake JSON HTTP response representing no events.
+
+        This test helper ignores any positional or keyword arguments and returns an _JsonResponse
+        whose JSON payload is {'events': []}.
+        """
         return _JsonResponse({'events': []})
 
     monkeypatch.setattr(
@@ -408,10 +434,10 @@ def test_scrape_scoreboard_fallback_returns_empty_when_no_games(monkeypatch, cap
     )
 
     assert scraper.scrape_scoreboard_fallback() == []
-    assert '[WARN] ESPN fallback: No upcoming games found' in capsys.readouterr().out
+    assert 'Fallback: no upcoming games found' in capsys.readouterr().err
 
 
-def test_parse_scoreboard_events_skips_invalid_entries_and_logs_warning(caplog):
+def test_parse_scoreboard_events_skips_invalid_entries_and_logs_warning(capsys, loguru_to_stderr):
     scraper = EspnOddsScraper()
     events = [
         {
@@ -446,10 +472,9 @@ def test_parse_scoreboard_events_skips_invalid_entries_and_logs_warning(caplog):
         },
     ]
 
-    with caplog.at_level('WARNING'):
-        assert scraper.parse_scoreboard_events(events) == []
+    assert scraper.parse_scoreboard_events(events) == []
 
-    assert 'Failed to parse ESPN scoreboard event' in caplog.text
+    assert 'Failed to parse ESPN scoreboard event' in capsys.readouterr().err
 
 
 # ============ cb-market (component-builder) structure tests ============

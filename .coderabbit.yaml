@@ -1,13 +1,18 @@
 language: en-US
-early_access: false
-enable_free_tier: true
+early_access: true
 
 tone_instructions: >-
-  Be direct, practical, and specific. Prioritize correctness, testability, production safety,
-  and maintainable Python over stylistic nitpicks covered by Ruff.
+  Be direct, practical, and specific. Provide actionable code snippets. Prioritize correctness, 
+  testability, production safety, strict Python 3.12+ type hints (compatible with pyright/ty), 
+  and maintainable architecture over stylistic nitpicks covered by Ruff. Flag anti-patterns: 
+  bare `requests` calls (must use `HttpClient`), `print()` (must use `logger`), and missing 
+  `from __future__ import annotations`.
 
 reviews:
-  profile: chill
+  profile: assertive
+  abort_on_close: true
+  suggested_labels: true
+  auto_apply_labels: true
   request_changes_workflow: false
   high_level_summary: true
   high_level_summary_placeholder: '@coderabbitai summary'
@@ -22,6 +27,9 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
+    ignore_title_keywords:
+      - "WIP"
+      - "DO NOT MERGE"
     base_branches:
       - main
   path_filters:
@@ -35,23 +43,55 @@ reviews:
     - '!**/*.gif'
     - '!**/*.webp'
   path_instructions:
-    - path: 'src/backend/**'
+    - path: 'src/backend/scrapers/draftkings/**'
       instructions: >-
-        Focus on scraper resilience, async correctness, retry/backoff behavior, rate limiting,
-        parser fallback coverage, and deterministic offline tests. Do not recommend paid services.
+        Review Playwright scraper logic. Verify that Playwright sessions always use try/finally 
+        with `_cleanup(session)`. Ensure new parsers contribute to the fallback chain. Check that 
+        selectors use `class*=` partial matching for stability, not exact class strings. Verify 
+        stealth evasion and anti-detection args are present.
+    - path: 'src/backend/scrapers/shared/**'
+      instructions: >-
+        Review HTTP client and parser logic. Ensure `get_json()` gracefully handles `curl_cffi` 
+        absence when `impersonate=` is used. Verify rate-limiting (`courlan`) is applied before 
+        HTTP requests and User-Agent rotation occurs on every request. Check that TypedDict 
+        schemas (e.g., `GameOdds`) are consistently applied.
+    - path: 'src/backend/scrapers/espn/**'
+      instructions: >-
+        Review ESPN JSON API scraper logic. Ensure graceful fallback from header API to scoreboard API.
+        Verify error handling is robust (broad except blocks for per-event parsing are intentional 
+        and defensive).
+    - path: 'src/backend/models/**'
+      instructions: >-
+        Review EV calculation and merging logic. Flag potential division by zero in EV calculations. 
+        Verify Kelly criterion remains capped at 5% for bankroll safety. Check that `recompute_expected_value` 
+        preserves existing row keys and `parse_american_odds()` returns `None` for malformed input.
+    - path: 'src/backend/enrichment/**'
+      instructions: >-
+        Review enrichment and caching logic. Verify `TTLCache` is used for all NBA API calls. 
+        Check that probability models are bounded to [0.01, 0.99]. Ensure team name matching 
+        handles tricode and substring fallbacks.
     - path: 'src/frontend/gui/**'
       instructions: >-
-        Focus on NiceGUI UX, blocking calls in UI handlers, user-facing errors, localhost behavior,
-        accessibility, and clear loading or empty states.
+        Focus on NiceGUI UX and event loops. CRITICAL: Flag any synchronous blocking call inside 
+        an async handler; they MUST use `await run.io_bound(...)`. Verify UI state is managed safely 
+        (e.g., button disable/enable in try/finally blocks). Ensure Quasar template strings are valid.
     - path: 'tests/**'
       instructions: >-
-        Prefer fixture-driven tests. Avoid tests that depend on live sportsbook pages, account state,
-        geo-gating, or unstable network behavior.
+        Review testing conventions. CRITICAL: Reject tests that call `sync_playwright().start()` 
+        or hit live URLs. Enforce use of `FakeElement`/`FakePage` from `tests/browser_fakes.py` 
+        and local fixtures (`src/backend/fixtures/`). Verify `monkeypatch` is used to prevent live network calls.
     - path: '.github/workflows/**'
       instructions: >-
-        Review permissions, pinned actions, concurrency, uv lock usage, artifact permissions,
-        release safety, and supply-chain risk.
+        Review GitHub Actions. Check for `persist-credentials: false` on checkouts. Ensure 
+        `uv sync --group dev` consistency and that artifact uploads use pinned SHAs. Verify 
+        matrix covers Python 3.12 and 3.13.
+    - path: 'pyproject.toml'
+      instructions: >-
+        Review dependency changes. Flag any new dependencies that are paid SaaS products, databases, 
+        or unnecessarily bloat the package. Ensure strict version constraints are reasonable.
   tools:
+    semgrep:
+      enabled: true
     ruff:
       enabled: true
     markdownlint:
@@ -67,7 +107,7 @@ reviews:
     osvScanner:
       enabled: true
     languagetool:
-      enabled: false
+      enabled: true
 
 chat:
   auto_reply: true
@@ -95,4 +135,7 @@ code_generation:
     path: tests
 
 issue_enrichment:
-  mode: auto
+  auto_enrich: true
+  planning: true
+  auto_planning: true
+  labeling: true

@@ -164,7 +164,7 @@ def test_wait_for_domain_sleeps_for_remaining_delay(monkeypatch):
     assert sleeps == [3.0]
 
 
-def test_log_retry_attempt_logs_warning(caplog):
+def test_log_retry_attempt_logs_warning(capsys, loguru_to_stderr):
     exception = RuntimeError('boom')
     retry_state = types.SimpleNamespace(
         attempt_number=2,
@@ -172,9 +172,9 @@ def test_log_retry_attempt_logs_warning(caplog):
         retry_object=types.SimpleNamespace(stop=types.SimpleNamespace(max_attempt_number=3)),
     )
 
-    with caplog.at_level('WARNING'):
-        http_client.HttpClient._log_retry_attempt(retry_state)
+    http_client.HttpClient._log_retry_attempt(retry_state)
 
-    assert 'HTTP retry 2/3' in caplog.text
-    assert 'RuntimeError' in caplog.text
-    assert 'boom' in caplog.text
+    captured = capsys.readouterr().err
+    assert 'HTTP retry 2/3' in captured
+    assert 'RuntimeError' in captured
+    assert 'boom' in captured
