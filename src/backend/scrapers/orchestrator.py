@@ -3,10 +3,11 @@ import uuid
 import pandas as pd
 from loguru import logger
 
+from backend.models.domain import Market
+
 from .draftkings.scraper import DraftKingsScraper
 from .espn.scraper import EspnOddsScraper
 from .shared.http_client import HttpClient
-from .shared.parsers import GameOdds
 
 
 class LiveOddsScraper:
@@ -36,7 +37,7 @@ class LiveOddsScraper:
         return games
 
     @staticmethod
-    def parse_draftkings_html(html: str) -> list[GameOdds]:
+    def parse_draftkings_html(html: str) -> list[Market]:
         """Compatibility wrapper for offline HTML parsing.
 
         Delegates to DraftKingsScraper.parse_html for consumers that still
