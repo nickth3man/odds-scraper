@@ -189,7 +189,6 @@ from __future__ import annotations
 # ==============================================================================
 import re
 from dataclasses import dataclass
-from datetime import datetime
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -197,8 +196,8 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 from playwright_stealth import Stealth
 
+from ...models.domain import Market, MarketType, NormalizedOdds, Outcome
 from ..shared.parsers import (
-    GameOdds,
     extract_first_american_odds,
     extract_first_signed_number,
     extract_first_total,
@@ -241,6 +240,18 @@ USER_AGENT = (
     'AppleWebKit/537.36 (KHTML, like Gecko) '
     'Chrome/124.0.0.0 Safari/537.36'
 )
+
+
+def _parse_american(raw: str) -> float | None:
+    """Convert a raw odds string like '+150' or '-110' to float, or return None."""
+    cleaned = raw.strip()
+    if not cleaned or cleaned == 'N/A':
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        extracted = extract_first_american_odds(cleaned)
+        return float(extracted) if extracted else None
 
 
 @dataclass(frozen=True)
@@ -318,12 +329,13 @@ class DraftKingsScraper:
         session.playwright.stop()
 
     @logger.catch
-    def scrape_odds(self) -> list[GameOdds]:
+    def scrape_odds(self) -> list[Market]:
         """
-        Fetch current NBA game odds from DraftKings and parse them into GameOdds entries.
+        Fetch current NBA game odds from DraftKings and parse them into Market objects.
 
         Returns:
-            list[GameOdds]: A list of parsed GameOdds objects for each found game, or an empty list if no games were found or if an error/timeout occurred.
+            list[Market]: A list of Market objects (H2H, SPREADS, TOTALS) for each found game,
+            or an empty list if no games were found or if an error/timeout occurred.
         """
         logger.info('Fetching live odds', source='DraftKings', action='fetch')
 
@@ -427,7 +439,7 @@ class DraftKingsScraper:
         finally:
             self._cleanup(session)
 
-    def parse_games(self, page) -> list[GameOdds]:
+    def parse_games(self, page) -> list[Market]:
         """Parse games from DraftKings page using Playwright.
 
         When parsel is available, HTML is extracted once from the page and
@@ -436,31 +448,138 @@ class DraftKingsScraper:
         """
         if _PARSEL_AVAILABLE and _HtmlSelector is not None:
             html = page.content()
-            games = self.parse_html(html)
-            if games:
-                return games
+            markets = self.parse_html(html)
+            if markets:
+                return markets
 
         # Try new cb-market structure first (component-builder layout)
-        games = self.parse_cb_market(page)
-        if games:
-            return games
+        markets = self.parse_cb_market(page)
+        if markets:
+            return markets
 
         # Fallback to old event-cell structure
         return self.parse_event_cells(page)
 
     @staticmethod
-    def parse_html(html: str) -> list[GameOdds]:
+    def _build_markets(
+        away_team: str,
+        home_team: str,
+        away_spread_raw: str,
+        away_moneyline_raw: str,
+        home_moneyline_raw: str,
+        over_total_raw: str,
+    ) -> list[Market]:
+        """Convert raw parsed game fields into a list of Market objects."""
+        markets: list[Market] = []
+
+        # H2H (moneyline) market
+        away_ml = _parse_american(away_moneyline_raw)
+        home_ml = _parse_american(home_moneyline_raw)
+        if away_ml is not None or home_ml is not None:
+            outcomes: list[Outcome] = []
+            if away_ml is not None:
+                outcomes.append(
+                    Outcome(name=away_team, price=NormalizedOdds.from_american(away_ml))
+                )
+            if home_ml is not None:
+                outcomes.append(
+                    Outcome(name=home_team, price=NormalizedOdds.from_american(home_ml))
+                )
+            markets.append(
+                Market(
+                    key=f'dk_h2h_{away_team}_vs_{home_team}',
+                    name='Moneyline',
+                    sport='nba',
+                    market_type=MarketType.H2H,
+                    outcomes=outcomes,
+                )
+            )
+
+        # SPREADS market
+        spread_val = None
+        if away_spread_raw and away_spread_raw != 'N/A':
+            try:
+                spread_val = float(away_spread_raw)
+            except ValueError:
+                signed = extract_first_signed_number(away_spread_raw)
+                if signed:
+                    spread_val = float(signed)
+        if spread_val is not None:
+            spread_outcomes: list[Outcome] = []
+            spread_outcomes.append(
+                Outcome(
+                    name=away_team,
+                    price=NormalizedOdds.from_american(0),
+                    point=spread_val,
+                )
+            )
+            spread_outcomes.append(
+                Outcome(
+                    name=home_team,
+                    price=NormalizedOdds.from_american(0),
+                    point=-spread_val,
+                )
+            )
+            markets.append(
+                Market(
+                    key=f'dk_spread_{away_team}_vs_{home_team}',
+                    name='Spread',
+                    sport='nba',
+                    market_type=MarketType.SPREADS,
+                    outcomes=spread_outcomes,
+                )
+            )
+
+        # TOTALS market
+        total_val = None
+        if over_total_raw and over_total_raw != 'N/A':
+            try:
+                total_val = float(over_total_raw)
+            except ValueError:
+                extracted = extract_first_total(over_total_raw)
+                if extracted:
+                    total_val = float(extracted)
+        if total_val is not None:
+            totals_outcomes: list[Outcome] = []
+            totals_outcomes.append(
+                Outcome(
+                    name='Over',
+                    price=NormalizedOdds.from_american(0),
+                    point=total_val,
+                )
+            )
+            totals_outcomes.append(
+                Outcome(
+                    name='Under',
+                    price=NormalizedOdds.from_american(0),
+                    point=total_val,
+                )
+            )
+            markets.append(
+                Market(
+                    key=f'dk_total_{away_team}_vs_{home_team}',
+                    name='Total',
+                    sport='nba',
+                    market_type=MarketType.TOTALS,
+                    outcomes=totals_outcomes,
+                )
+            )
+
+        return markets
+
+    @staticmethod
+    def parse_html(html: str) -> list[Market]:
         """Parse DraftKings NBA page HTML using parsel CSS selectors.
 
         Accepts raw HTML string (e.g. from page.content()) and returns
-        a list of game dicts with the same schema as the Playwright paths.
+        a list of Market objects for each game.
         Returns an empty list when parsel is not installed.
         """
         if not _PARSEL_AVAILABLE or _HtmlSelector is None:
             return []
 
         selector = _HtmlSelector(text=html)
-        games = []
+        markets: list[Market] = []
 
         for template in selector.css(TEMPLATE_SELECTOR):
             try:
@@ -492,27 +611,24 @@ class DraftKingsScraper:
                 over_under_points = get_button_text(template, '0OU', BUTTON_POINTS_DATA_TESTID)
                 over_total = over_under_points if over_under_title.upper() == 'O' else 'N/A'
 
-                games.append(
-                    {
-                        'date': datetime.now().strftime('%Y-%m-%d'),
-                        'home_team': home_team,
-                        'away_team': away_team,
-                        'matchup': f'{away_team} @ {home_team}',
-                        'spread': away_spread,
-                        'moneyline': away_moneyline,
-                        'home_moneyline': home_moneyline,
-                        'over_under': over_total,
-                        'source': 'DraftKings',
-                    }
+                markets.extend(
+                    DraftKingsScraper._build_markets(
+                        away_team,
+                        home_team,
+                        away_spread,
+                        away_moneyline,
+                        home_moneyline,
+                        over_total,
+                    )
                 )
             except (AttributeError, ValueError, IndexError):
                 continue
 
-        return games
+        return markets
 
-    def parse_cb_market(self, page) -> list[GameOdds]:
+    def parse_cb_market(self, page) -> list[Market]:
         """Parse DraftKings games using cb-market__template structure."""
-        games = []
+        markets: list[Market] = []
 
         try:
             # Find game templates — DraftKings uses both 2-column and 4-column layouts
@@ -582,33 +698,30 @@ class DraftKingsScraper:
                         except (AttributeError, ValueError):
                             continue
 
-                    games.append(
-                        {
-                            'date': datetime.now().strftime('%Y-%m-%d'),
-                            'home_team': home_team,
-                            'away_team': away_team,
-                            'matchup': f'{away_team} @ {home_team}',
-                            'spread': away_spread,
-                            'moneyline': away_moneyline,
-                            'home_moneyline': home_moneyline,
-                            'over_under': over_total,
-                            'source': 'DraftKings',
-                        }
+                    markets.extend(
+                        self._build_markets(
+                            away_team,
+                            home_team,
+                            away_spread,
+                            away_moneyline,
+                            home_moneyline,
+                            over_total,
+                        )
                     )
 
                 except Exception as error:
                     logger.warning('Failed to parse DraftKings cb-market game: {}', error)
                     continue
 
-            return games
+            return markets
 
         except Exception as error:
             logger.warning('Error parsing DraftKings cb-market structure: {}', error)
             return []
 
-    def parse_event_cells(self, page) -> list[GameOdds]:
+    def parse_event_cells(self, page) -> list[Market]:
         """Parse DraftKings games using legacy event-cell structure."""
-        games = []
+        markets: list[Market] = []
 
         try:
             # Team name elements — DraftKings uses event-cell__name-text (stable partial class)
@@ -648,33 +761,32 @@ class DraftKingsScraper:
                             "button[aria-label*='Moneyline'], "
                             "[class*='sportsbook-outcome-cell__body']"
                         )
-                        spread, moneyline, over_under = self.parse_markets(outcome_cells, away_team)
+                        spread, moneyline, over_under = self._extract_raw_markets(
+                            outcome_cells, away_team
+                        )
 
-                    games.append(
-                        {
-                            'date': datetime.now().strftime('%Y-%m-%d'),
-                            'home_team': home_team,
-                            'away_team': away_team,
-                            'matchup': f'{away_team} @ {home_team}',
-                            'spread': spread,
-                            'moneyline': moneyline,
-                            'home_moneyline': 'N/A',
-                            'over_under': over_under,
-                            'source': 'DraftKings',
-                        }
+                    markets.extend(
+                        self._build_markets(
+                            away_team,
+                            home_team,
+                            spread,
+                            moneyline,
+                            'N/A',
+                            over_under,
+                        )
                     )
 
                 except Exception as error:
                     logger.warning('Failed to parse DraftKings game row: {}', error)
                     continue
 
-            return games
+            return markets
 
         except Exception as error:
             logger.warning('Error parsing DraftKings event cells: {}', error)
             return []
 
-    def parse_markets(self, outcome_cells, team_name: str) -> tuple[str, str, str]:
+    def _extract_raw_markets(self, outcome_cells, team_name: str) -> tuple[str, str, str]:
         spread = 'N/A'
         moneyline = 'N/A'
         over_under = 'N/A'
