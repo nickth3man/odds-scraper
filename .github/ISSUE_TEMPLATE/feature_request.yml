@@ -26,6 +26,7 @@ body:
         - DraftKings scraper
         - HTTP client / retries / rate limiting
         - EV calculator
+        - NBA data/modeling / backtesting
         - NiceGUI dashboard
         - Packaging / CI
         - Documentation
