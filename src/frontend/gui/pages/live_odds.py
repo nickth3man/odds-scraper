@@ -3,7 +3,7 @@ from __future__ import annotations
 from nicegui import APIRouter, run, ui
 
 from backend.enrichment import TeamEnrichmentService
-from backend.models.odds_enrichment import merge_source_rows, recompute_expected_value
+from backend.models.odds_enrichment import merge_source_rows
 from backend.scrapers import LiveOddsScraper
 from backend.scrapers.espn import EspnOddsScraper
 
@@ -31,9 +31,8 @@ SOURCE_BADGE_SLOT = """
 def live_odds() -> None:
     """Render the Live Odds page with multi-source scraping and EV analysis.
 
-    Provides buttons to scrape ESPN and DraftKings odds, a probability slider
-    for EV computation, and a searchable table with per-row expected-value
-    enrichment for both away and home moneylines.
+    Provides buttons to scrape ESPN and DraftKings odds and a searchable table
+    with per-row expected-value enrichment for bet outcomes with valid data.
     """
     enrichment = TeamEnrichmentService()
 

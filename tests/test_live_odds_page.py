@@ -68,12 +68,18 @@ def test_enrich_live_odds_skips_outcomes_when_devig_fails():
         event_id='evt-2',
         market_type=MarketType.H2H,
         outcomes=[
-            Outcome(name='Team A', price=NormalizedOdds(american=0, decimal=1.0, implied_probability=0.0)),
-            Outcome(name='Team B', price=NormalizedOdds(american=0, decimal=1.0, implied_probability=0.0)),
+            Outcome(
+                name='Team A',
+                price=NormalizedOdds(american=0, decimal=1.0, implied_probability=0.0),
+            ),
+            Outcome(
+                name='Team B',
+                price=NormalizedOdds(american=0, decimal=1.0, implied_probability=0.0),
+            ),
         ],
     )
     rows = enrich_live_odds_rows([market], source='ESPN')
-    
+
     assert len(rows) == 0
 
 
@@ -96,7 +102,7 @@ def test_merge_source_rows_replaces_only_refreshed_sportsbook_rows():
             'prob_source': 'devig',
         },
     ]
-    
+
     new_espn_markets = [make_h2h_market(event_id='evt-new')]
 
     rows = merge_source_rows(existing_rows, new_espn_markets, 'ESPN')
@@ -105,6 +111,6 @@ def test_merge_source_rows_replaces_only_refreshed_sportsbook_rows():
     sources = [row['source'] for row in rows]
     assert sources.count('DraftKings') == 1
     assert sources.count('ESPN') == 2
-    
+
     event_ids = [row.get('event_id') for row in rows if row['source'] == 'ESPN']
     assert event_ids == ['evt-new', 'evt-new']

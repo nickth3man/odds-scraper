@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from backend.enrichment import TeamEnrichmentService, compute_model_probability
-from backend.models.ev_calculator import EVCalculator, devig_market
 from backend.models.domain import Market, MarketType
+from backend.models.ev_calculator import EVCalculator, devig_market
 
 
 def format_expected_value_per_100(
@@ -28,31 +28,33 @@ def enrich_live_odds_rows(
     """
     calculator = EVCalculator()
     rows: list[dict] = []
-    
+
     for market in markets:
         true_probs = devig_market(market)
-        
+
         for i, outcome in enumerate(market.outcomes):
             row_prob = true_probs[i] if i < len(true_probs) else 0.0
             prob_source = 'devig'
-            
-            if market.market_type == MarketType.H2H and enrichment_service is not None:
-                if len(market.outcomes) == 2:
-                    team_name = outcome.name
-                    opp_idx = 1 if i == 0 else 0
-                    opp_name = market.outcomes[opp_idx].name
-                    
-                    team_stats = enrichment_service.get_team_stats(team_name)
-                    opp_stats = enrichment_service.get_team_stats(opp_name)
-                    
-                    if team_stats and opp_stats:
-                        row_prob = compute_model_probability(team_stats, opp_stats)
-                        prob_source = 'nba_api'
-            
+
+            if (
+                market.market_type == MarketType.H2H
+                and enrichment_service is not None
+                and len(market.outcomes) == 2
+            ):
+                team_name = outcome.name
+                opp_idx = 1 if i == 0 else 0
+                opp_name = market.outcomes[opp_idx].name
+
+                team_stats = enrichment_service.get_team_stats(team_name)
+                opp_stats = enrichment_service.get_team_stats(opp_name)
+
+                if team_stats and opp_stats:
+                    row_prob = compute_model_probability(team_stats, opp_stats)
+                    prob_source = 'nba_api'
+
             if row_prob == 0.0 and prob_source == 'devig':
-                row_prob = model_probability
-                prob_source = 'manual_slider'
-            
+                continue
+
             row = {
                 'id': f'{market.key}-{outcome.name}-{source}',
                 'event_id': market.event_id,
@@ -70,7 +72,7 @@ def enrich_live_odds_rows(
                 'source': source,
             }
             rows.append(row)
-            
+
     return rows
 
 
