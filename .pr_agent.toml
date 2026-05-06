@@ -9,10 +9,14 @@ ignore_pr_authors = ["dependabot[bot]"]
 
 [ignore]
 glob = [
+  "raw/**",
   "data/**",
   "reference/**",
   "htmlcov/**",
   ".venv/**",
+  "**/*.sqlite",
+  "**/*.db",
+  "**/*.parquet",
   "**/*.csv",
   "**/*.png",
   "**/*.jpg",
@@ -48,8 +52,13 @@ Focus the review on:
 - Python 3.12+ type safety and async correctness.
 - Ruff formatting conventions: single quotes and 100-character lines.
 - Test coverage and deterministic offline tests using fixtures instead of live sportsbook traffic.
+- Data/modeling changes under src/backend/data: check for target leakage, chronological validation,
+  de-vigged market baselines, Brier/log-loss reporting, parameterized SQL, and no reliance on
+  unavailable-at-bet-time odds.
 - Scraper resilience: selector drift, retry/backoff behavior, rate limits, geo/bot gating, and safe error handling.
 - NiceGUI UX regressions, long-running scraping work blocking the event loop, and localhost-only assumptions.
+- Do not suggest random train/test splits for sports time-series data.
+- Do not suggest manual/default probability fallbacks for missing odds/model data.
 - Do not suggest paid CI, paid security scanners, or additional SaaS beyond CodeRabbit, Sourcery, and Qodo.
 """
 
