@@ -2,11 +2,8 @@ language: en-US
 early_access: true
 
 tone_instructions: >-
-  Be direct, practical, and specific. Provide actionable code snippets. Prioritize correctness, 
-  testability, production safety, strict Python 3.12+ type hints (compatible with pyright/ty), 
-  and maintainable architecture over stylistic nitpicks covered by Ruff. Flag anti-patterns: 
-  bare `requests` calls (must use `HttpClient`), `print()` (must use `logger`), and missing 
-  `from __future__ import annotations`.
+  Be direct and specific. Prioritize correctness, tests, Python 3.12 typing, and maintainable
+  architecture over Ruff-covered style. Flag bare HTTP clients, print(), and missing future annotations.
 
 reviews:
   profile: assertive
@@ -148,7 +145,10 @@ code_generation:
     path: tests
 
 issue_enrichment:
-  auto_enrich: true
-  planning: true
+  auto_enrich:
+    enabled: true
+  planning:
+    enabled: true
   auto_planning: true
-  labeling: true
+  labeling:
+    enabled: true
