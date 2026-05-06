@@ -1,3 +1,4 @@
+from backend.models.domain import Market, NormalizedOdds
 from loguru import logger
 
 
@@ -28,7 +29,7 @@ class EVCalculator:
         return probability
 
     def calculate_expected_value(
-        self, model_probability: float, american_odds: int, stake: float = 100
+        self, model_probability: float, american_odds: int | float, stake: float = 100
     ) -> float:
         """
         Calculate Expected Value of a bet
@@ -55,6 +56,14 @@ class EVCalculator:
         expected_value = win_value - loss_value
 
         return expected_value
+
+    def calculate_expected_value_from_odds(
+        self, model_probability: float, odds: NormalizedOdds, stake: float = 100
+    ) -> float:
+        """
+        Calculate Expected Value of a bet using NormalizedOdds object.
+        """
+        return self.calculate_expected_value(model_probability, odds.american, stake)
 
     def evaluate_bet(
         self, team: str, model_probability: float, american_odds: int, stake: float = 100
@@ -131,3 +140,20 @@ class EVCalculator:
                 ev=bet['expected_value_per_stake'],
                 recommendation=bet['recommendation'],
             )
+
+
+def devig_market(market: Market) -> list[float]:
+    """
+    Calculate the 'true' probability of each outcome in a market by removing the sportsbook margin (vig)
+    using the multiplicative method.
+    """
+    if not market.outcomes:
+        return []
+        
+    implied_probs = [outcome.price.implied_probability for outcome in market.outcomes]
+    total_implied = sum(implied_probs)
+    
+    if total_implied == 0:
+        return [0.0] * len(market.outcomes)
+        
+    return [p / total_implied for p in implied_probs]
