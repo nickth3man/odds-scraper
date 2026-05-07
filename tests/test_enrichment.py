@@ -146,6 +146,7 @@ class TestTeamEnrichmentServiceWithCache:
         """
         service = TeamEnrichmentService(cache_ttl=9999.0)
         service._cache.clear()
+        service._fetch_from_nba_api = lambda: {}  # type: ignore[method-assign]
         result = service.get_team_stats('Boston Celtics')
         assert result is None
 

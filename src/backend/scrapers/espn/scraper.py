@@ -143,6 +143,8 @@ class EspnOddsScraper:
                 home_team_odds = odds.get('homeTeamOdds', {})
                 away_ml_raw = away_team_odds.get('moneyLine')
                 home_ml_raw = home_team_odds.get('moneyLine')
+                away_spread_odds_raw = away_team_odds.get('spreadOdds')
+                home_spread_odds_raw = home_team_odds.get('spreadOdds')
 
                 away_spread_raw: float | None = None
                 raw_home_spread = odds.get('spread')
@@ -154,6 +156,8 @@ class EspnOddsScraper:
                 if odds.get('overUnder') is not None:
                     with contextlib.suppress(ValueError):
                         total_raw = float(odds['overUnder'])
+                over_odds_raw = odds.get('overOdds')
+                under_odds_raw = odds.get('underOdds')
 
                 # --- Build markets ---
                 event_markets = self._build_event_markets(
@@ -163,7 +167,11 @@ class EspnOddsScraper:
                     away_ml_raw=away_ml_raw,
                     home_ml_raw=home_ml_raw,
                     away_spread_raw=away_spread_raw,
+                    away_spread_odds_raw=away_spread_odds_raw,
+                    home_spread_odds_raw=home_spread_odds_raw,
                     total_raw=total_raw,
+                    over_odds_raw=over_odds_raw,
+                    under_odds_raw=under_odds_raw,
                 )
                 markets.extend(event_markets)
 
@@ -252,11 +260,13 @@ class EspnOddsScraper:
                 home_ml_raw = home_ml_dict.get('odds')
 
                 away_spread_dict = odds.get('pointSpread', {}).get('away', {}).get('close', {})
+                home_spread_dict = odds.get('pointSpread', {}).get('home', {}).get('close', {})
                 away_spread_raw: float | None = None
                 raw_spread_line = away_spread_dict.get('line')
                 if raw_spread_line is not None:
                     away_spread_raw = _parse_float_line(raw_spread_line)
                 over_total_dict = odds.get('total', {}).get('over', {}).get('close', {})
+                under_total_dict = odds.get('total', {}).get('under', {}).get('close', {})
                 total_raw = _parse_float_line(over_total_dict.get('line'))
 
                 event_markets = self._build_event_markets(
@@ -266,7 +276,11 @@ class EspnOddsScraper:
                     away_ml_raw=away_ml_raw,
                     home_ml_raw=home_ml_raw,
                     away_spread_raw=away_spread_raw,
+                    away_spread_odds_raw=away_spread_dict.get('odds'),
+                    home_spread_odds_raw=home_spread_dict.get('odds'),
                     total_raw=total_raw,
+                    over_odds_raw=over_total_dict.get('odds'),
+                    under_odds_raw=under_total_dict.get('odds'),
                 )
                 markets.extend(event_markets)
 
@@ -301,7 +315,11 @@ class EspnOddsScraper:
         away_ml_raw: int | float | None,
         home_ml_raw: int | float | None,
         away_spread_raw: float | None,
+        away_spread_odds_raw: int | float | str | None,
+        home_spread_odds_raw: int | float | str | None,
         total_raw: float | None,
+        over_odds_raw: int | float | str | None,
+        under_odds_raw: int | float | str | None,
     ) -> list[Market]:
         """
         Build H2H, SPREADS, and TOTALS Market objects for a single event from extracted raw values.
@@ -335,8 +353,13 @@ class EspnOddsScraper:
                 )
             )
 
-        # Spreads
-        if away_spread_raw is not None:
+        away_spread_odds = _parse_float_line(away_spread_odds_raw)
+        home_spread_odds = _parse_float_line(home_spread_odds_raw)
+        if (
+            away_spread_raw is not None
+            and away_spread_odds is not None
+            and home_spread_odds is not None
+        ):
             result.append(
                 Market(
                     key=f'espn_spreads_{event_id}',
@@ -347,20 +370,21 @@ class EspnOddsScraper:
                     outcomes=[
                         Outcome(
                             name=away_team,
-                            price=NormalizedOdds.from_american(-110),
+                            price=NormalizedOdds.from_american(away_spread_odds),
                             point=away_spread_raw,
                         ),
                         Outcome(
                             name=home_team,
-                            price=NormalizedOdds.from_american(-110),
+                            price=NormalizedOdds.from_american(home_spread_odds),
                             point=-away_spread_raw,
                         ),
                     ],
                 )
             )
 
-        # Totals
-        if total_raw is not None:
+        over_odds = _parse_float_line(over_odds_raw)
+        under_odds = _parse_float_line(under_odds_raw)
+        if total_raw is not None and over_odds is not None and under_odds is not None:
             result.append(
                 Market(
                     key=f'espn_totals_{event_id}',
@@ -371,12 +395,12 @@ class EspnOddsScraper:
                     outcomes=[
                         Outcome(
                             name='Over',
-                            price=NormalizedOdds.from_american(-110),
+                            price=NormalizedOdds.from_american(over_odds),
                             point=total_raw,
                         ),
                         Outcome(
                             name='Under',
-                            price=NormalizedOdds.from_american(-110),
+                            price=NormalizedOdds.from_american(under_odds),
                             point=total_raw,
                         ),
                     ],

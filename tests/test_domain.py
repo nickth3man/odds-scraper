@@ -27,11 +27,10 @@ class TestNormalizedOdds:
         assert odds.decimal == pytest.approx(100 / 110 + 1, abs=1e-9)
         assert odds.implied_probability == pytest.approx(110 / 210, abs=1e-9)
 
-    def test_from_american_zero(self):
-        """0 → decimal 1.0, implied 1.0 (degenerate)."""
-        odds = NormalizedOdds.from_american(0)
-        assert odds.decimal == 1.0
-        assert odds.implied_probability == 1.0
+    def test_from_american_zero_rejected(self):
+        """0 is not a valid American odds price."""
+        with pytest.raises(ValueError, match='non-zero'):
+            NormalizedOdds.from_american(0)
 
     def test_from_american_extreme_positive(self):
         """Very large positive odds → near-zero probability."""
@@ -163,6 +162,17 @@ class TestDevigMarket:
             market_type=MarketType.H2H,
             outcomes=[],
         )
+        assert devig_market(market) == []
+
+    def test_devig_single_outcome_market_is_not_deviggable(self):
+        market = Market(
+            key='m-single',
+            name='Moneyline',
+            sport='nba',
+            market_type=MarketType.H2H,
+            outcomes=[Outcome(name='A', price=NormalizedOdds.from_american(-110))],
+        )
+
         assert devig_market(market) == []
 
     def test_devig_zero_probabilities(self):

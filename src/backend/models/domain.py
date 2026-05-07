@@ -25,9 +25,8 @@ class NormalizedOdds(BaseModel):
             A ``NormalizedOdds`` instance with decimal and implied probability computed.
         """
         if american == 0:
-            decimal = 1.0
-            implied_probability = 1.0
-        elif american < 0:
+            raise ValueError('american odds must be non-zero')
+        if american < 0:
             decimal = 1.0 + (100.0 / abs(american))
             implied_probability = abs(american) / (abs(american) + 100.0)
         else:

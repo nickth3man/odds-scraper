@@ -153,6 +153,7 @@ class TeamEnrichmentService:
         advanced_rows = advanced.get_dict()['resultSets'][0]['rowSet']
         advanced_headers = advanced.get_dict()['resultSets'][0]['headers']
 
+        team_id_idx = advanced_headers.index('TEAM_ID')
         team_idx = advanced_headers.index('TEAM_NAME')
         abbr_idx = advanced_headers.index('TEAM_ABBREVIATION')
         off_idx = advanced_headers.index('OFF_RATING')
@@ -162,8 +163,9 @@ class TeamEnrichmentService:
 
         advanced_data: dict[str, dict[str, Any]] = {}
         for row in advanced_rows:
-            abbr = row[abbr_idx]
-            advanced_data[abbr] = {
+            team_id = str(row[team_id_idx])
+            abbr = str(row[abbr_idx])
+            advanced_data[team_id] = {
                 'team_name': row[team_idx],
                 'abbreviation': abbr,
                 'off_rating': row[off_idx],
@@ -181,14 +183,17 @@ class TeamEnrichmentService:
 
         w_idx = standings_headers.index('WINS')
         l_idx = standings_headers.index('LOSSES')
-        wp_idx = standings_headers.index('WinPct')
+        wp_idx = standings_headers.index('WinPCT')
         tid_idx = standings_headers.index('TeamID')
 
         for row in standings_rows:
-            abbr = row[tid_idx]
-            advances = advanced_data.get(abbr, {})
+            team_id = str(row[tid_idx])
+            advances = advanced_data.get(team_id)
+            if advances is None:
+                continue
+            abbr = str(advances['abbreviation'])
             stats_dict[abbr] = TeamStats(
-                team_name=advances.get('team_name', abbr),
+                team_name=str(advances['team_name']),
                 abbreviation=abbr,
                 wins=row[w_idx],
                 losses=row[l_idx],

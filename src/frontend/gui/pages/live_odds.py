@@ -3,7 +3,7 @@ from __future__ import annotations
 from nicegui import APIRouter, run, ui
 
 from backend.enrichment import TeamEnrichmentService
-from backend.models.odds_enrichment import merge_source_rows
+from backend.models.odds_enrichment import enrich_live_odds_rows
 from backend.scrapers import LiveOddsScraper
 from backend.scrapers.espn import EspnOddsScraper
 
@@ -56,9 +56,8 @@ def live_odds() -> None:
             try:
                 scraper = EspnOddsScraper()
                 games = await run.io_bound(scraper.scrape_nba_odds)
-                rows = await run.io_bound(
-                    merge_source_rows, list(table.rows), games, 'ESPN', enrichment
-                )
+                new_rows = await run.io_bound(enrich_live_odds_rows, games, enrichment, 'ESPN')
+                rows = [dict(row) for row in table.rows if row.get('source') != 'ESPN'] + new_rows
                 table.update_rows(rows)
                 status.text = f'Loaded {len(games)} ESPN games.'
             except Exception:
@@ -77,9 +76,12 @@ def live_odds() -> None:
             try:
                 scraper = LiveOddsScraper()
                 games = await run.io_bound(scraper.scrape_draftkings_odds)
-                rows = await run.io_bound(
-                    merge_source_rows, list(table.rows), games, 'DraftKings', enrichment
+                new_rows = await run.io_bound(
+                    enrich_live_odds_rows, games, enrichment, 'DraftKings'
                 )
+                rows = [
+                    dict(row) for row in table.rows if row.get('source') != 'DraftKings'
+                ] + new_rows
                 table.update_rows(rows)
                 status.text = f'Loaded {len(games)} DraftKings games.'
             except Exception:

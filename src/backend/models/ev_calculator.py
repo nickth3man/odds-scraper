@@ -182,7 +182,7 @@ def devig_market(market: Market) -> list[float]:
             - Returns an empty list if `market.outcomes` is empty.
             - If the sum of implied probabilities is 0, returns a list of `0.0` values with the same length as `market.outcomes`.
     """
-    if not market.outcomes:
+    if len(market.outcomes) < 2:
         return []
 
     implied_probs = [outcome.price.implied_probability for outcome in market.outcomes]

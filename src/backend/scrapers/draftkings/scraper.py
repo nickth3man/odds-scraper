@@ -261,6 +261,16 @@ def _parse_american(raw: str) -> float | None:
         return float(extracted) if extracted else None
 
 
+def _draftkings_event_id_from_text(value: str) -> str | None:
+    match = re.search(r'market-button-(\d+)-', value)
+    return match.group(1) if match else None
+
+
+def _fallback_event_id(away_team: str, home_team: str) -> str:
+    matchup = f'{away_team}-{home_team}'.lower()
+    return re.sub(r'[^a-z0-9]+', '-', matchup).strip('-')
+
+
 @dataclass(frozen=True)
 class _BrowserSession:
     playwright: Playwright
@@ -475,10 +485,17 @@ class DraftKingsScraper:
     def _build_markets(
         away_team: str,
         home_team: str,
+        event_id: str | None,
         away_spread_raw: str,
+        away_spread_odds_raw: str,
+        home_spread_raw: str,
+        home_spread_odds_raw: str,
         away_moneyline_raw: str,
         home_moneyline_raw: str,
         over_total_raw: str,
+        over_odds_raw: str,
+        under_total_raw: str,
+        under_odds_raw: str,
     ) -> list[Market]:
         """
         Constructs Market objects (moneyline, spread, and total) for a single game from raw parsed fields.
@@ -500,60 +517,70 @@ class DraftKingsScraper:
             list[Market]: A list of Market objects for the game. Markets are omitted when their corresponding raw input cannot be parsed; moneyline outcomes are included only for sides with parsable odds.
         """
         markets: list[Market] = []
+        resolved_event_id = event_id or _fallback_event_id(away_team, home_team)
 
         # H2H (moneyline) market
         away_ml = _parse_american(away_moneyline_raw)
         home_ml = _parse_american(home_moneyline_raw)
-        if away_ml is not None or home_ml is not None:
-            outcomes: list[Outcome] = []
-            if away_ml is not None:
-                outcomes.append(
-                    Outcome(name=away_team, price=NormalizedOdds.from_american(away_ml))
-                )
-            if home_ml is not None:
-                outcomes.append(
-                    Outcome(name=home_team, price=NormalizedOdds.from_american(home_ml))
-                )
+        if away_ml is not None and home_ml is not None:
+            outcomes = [
+                Outcome(name=away_team, price=NormalizedOdds.from_american(away_ml)),
+                Outcome(name=home_team, price=NormalizedOdds.from_american(home_ml)),
+            ]
             markets.append(
                 Market(
-                    key=f'dk_h2h_{away_team}_vs_{home_team}',
+                    key=f'draftkings_h2h_{resolved_event_id}',
                     name='Moneyline',
                     sport='nba',
+                    event_id=resolved_event_id,
                     market_type=MarketType.H2H,
                     outcomes=outcomes,
                 )
             )
 
         # SPREADS market
-        spread_val = None
+        away_spread_val = None
         if away_spread_raw and away_spread_raw != 'N/A':
             try:
-                spread_val = float(away_spread_raw)
+                away_spread_val = float(away_spread_raw)
             except ValueError:
                 signed = extract_first_signed_number(away_spread_raw)
                 if signed:
-                    spread_val = float(signed)
-        if spread_val is not None:
-            spread_outcomes: list[Outcome] = []
-            spread_outcomes.append(
+                    away_spread_val = float(signed)
+        home_spread_val = None
+        if home_spread_raw and home_spread_raw != 'N/A':
+            try:
+                home_spread_val = float(home_spread_raw)
+            except ValueError:
+                signed = extract_first_signed_number(home_spread_raw)
+                if signed:
+                    home_spread_val = float(signed)
+        away_spread_odds = _parse_american(away_spread_odds_raw)
+        home_spread_odds = _parse_american(home_spread_odds_raw)
+        if (
+            away_spread_val is not None
+            and home_spread_val is not None
+            and away_spread_odds is not None
+            and home_spread_odds is not None
+        ):
+            spread_outcomes = [
                 Outcome(
                     name=away_team,
-                    price=NormalizedOdds.from_american(0),
-                    point=spread_val,
-                )
-            )
-            spread_outcomes.append(
+                    price=NormalizedOdds.from_american(away_spread_odds),
+                    point=away_spread_val,
+                ),
                 Outcome(
                     name=home_team,
-                    price=NormalizedOdds.from_american(0),
-                    point=-spread_val,
-                )
-            )
+                    price=NormalizedOdds.from_american(home_spread_odds),
+                    point=home_spread_val,
+                ),
+            ]
             markets.append(
                 Market(
-                    key=f'dk_spread_{away_team}_vs_{home_team}',
+                    key=f'draftkings_spread_{resolved_event_id}',
                     name='Spread',
                     sport='nba',
+                    event_id=resolved_event_id,
                     market_type=MarketType.SPREADS,
                     outcomes=spread_outcomes,
                 )
@@ -568,27 +595,35 @@ class DraftKingsScraper:
                 extracted = extract_first_total(over_total_raw)
                 if extracted:
                     total_val = float(extracted)
-        if total_val is not None:
-            totals_outcomes: list[Outcome] = []
-            totals_outcomes.append(
+        under_total_val = None
+        if under_total_raw and under_total_raw != 'N/A':
+            try:
+                under_total_val = float(under_total_raw)
+            except ValueError:
+                extracted = extract_first_total(under_total_raw)
+                if extracted:
+                    under_total_val = float(extracted)
+        over_odds = _parse_american(over_odds_raw)
+        under_odds = _parse_american(under_odds_raw)
+        if total_val is not None and under_total_val is not None and over_odds and under_odds:
+            totals_outcomes = [
                 Outcome(
                     name='Over',
-                    price=NormalizedOdds.from_american(0),
+                    price=NormalizedOdds.from_american(over_odds),
                     point=total_val,
-                )
-            )
-            totals_outcomes.append(
+                ),
                 Outcome(
                     name='Under',
-                    price=NormalizedOdds.from_american(0),
-                    point=total_val,
-                )
-            )
+                    price=NormalizedOdds.from_american(under_odds),
+                    point=under_total_val,
+                ),
+            ]
             markets.append(
                 Market(
-                    key=f'dk_total_{away_team}_vs_{home_team}',
+                    key=f'draftkings_total_{resolved_event_id}',
                     name='Total',
                     sport='nba',
+                    event_id=resolved_event_id,
                     market_type=MarketType.TOTALS,
                     outcomes=totals_outcomes,
                 )
@@ -631,7 +666,27 @@ class DraftKingsScraper:
                         or 'N/A'
                     ).strip() or 'N/A'
 
-                away_spread = get_button_text(template, '0HC', BUTTON_POINTS_DATA_TESTID)
+                event_id = _draftkings_event_id_from_text(
+                    template.css("button[data-testid*='market-button']::attr(data-testid)").get() or ''
+                )
+                spread_points = [
+                    value.strip()
+                    for value in template.css(
+                        f"button[data-testid*='0HC'] [data-testid='{BUTTON_POINTS_DATA_TESTID}']::text"
+                    ).getall()
+                    if value and value.strip()
+                ]
+                spread_odds = [
+                    value.strip()
+                    for value in template.css(
+                        f"button[data-testid*='0HC'] [data-testid='{BUTTON_ODDS_DATA_TESTID}']::text"
+                    ).getall()
+                    if value and value.strip()
+                ]
+                away_spread = spread_points[0] if spread_points else 'N/A'
+                home_spread = spread_points[1] if len(spread_points) > 1 else 'N/A'
+                away_spread_odds = spread_odds[0] if spread_odds else 'N/A'
+                home_spread_odds = spread_odds[1] if len(spread_odds) > 1 else 'N/A'
                 moneyline_values = [
                     value.strip()
                     for value in template.css(
@@ -641,18 +696,54 @@ class DraftKingsScraper:
                 ]
                 away_moneyline = moneyline_values[0] if moneyline_values else 'N/A'
                 home_moneyline = moneyline_values[1] if len(moneyline_values) > 1 else 'N/A'
-                over_under_title = get_button_text(template, '0OU', BUTTON_TITLE_DATA_TESTID)
-                over_under_points = get_button_text(template, '0OU', BUTTON_POINTS_DATA_TESTID)
-                over_total = over_under_points if over_under_title.upper() == 'O' else 'N/A'
+                total_titles = [
+                    value.strip().upper()
+                    for value in template.css(
+                        f"button[data-testid*='0OU'] [data-testid='{BUTTON_TITLE_DATA_TESTID}']::text"
+                    ).getall()
+                    if value and value.strip()
+                ]
+                total_points = [
+                    value.strip()
+                    for value in template.css(
+                        f"button[data-testid*='0OU'] [data-testid='{BUTTON_POINTS_DATA_TESTID}']::text"
+                    ).getall()
+                    if value and value.strip()
+                ]
+                total_odds = [
+                    value.strip()
+                    for value in template.css(
+                        f"button[data-testid*='0OU'] [data-testid='{BUTTON_ODDS_DATA_TESTID}']::text"
+                    ).getall()
+                    if value and value.strip()
+                ]
+                over_total = 'N/A'
+                over_odds = 'N/A'
+                under_total = 'N/A'
+                under_odds = 'N/A'
+                for index, title in enumerate(total_titles):
+                    if title == 'O' and index < len(total_points):
+                        over_total = total_points[index]
+                        over_odds = total_odds[index] if index < len(total_odds) else 'N/A'
+                    elif title == 'U' and index < len(total_points):
+                        under_total = total_points[index]
+                        under_odds = total_odds[index] if index < len(total_odds) else 'N/A'
 
                 markets.extend(
                     DraftKingsScraper._build_markets(
                         away_team,
                         home_team,
+                        event_id,
                         away_spread,
+                        away_spread_odds,
+                        home_spread,
+                        home_spread_odds,
                         away_moneyline,
                         home_moneyline,
                         over_total,
+                        over_odds,
+                        under_total,
+                        under_odds,
                     )
                 )
             except (AttributeError, ValueError, IndexError):
@@ -699,13 +790,21 @@ class DraftKingsScraper:
                     buttons = template.query_selector_all(MARKET_BUTTON_SELECTOR)
 
                     away_spread = 'N/A'
+                    away_spread_odds = 'N/A'
+                    home_spread = 'N/A'
+                    home_spread_odds = 'N/A'
                     away_moneyline = 'N/A'
                     home_moneyline = 'N/A'
                     over_total = 'N/A'
+                    over_odds = 'N/A'
+                    under_total = 'N/A'
+                    under_odds = 'N/A'
+                    event_id: str | None = None
 
                     for button in buttons:
                         try:
                             testid = button.get_attribute('data-testid') or ''
+                            event_id = event_id or _draftkings_event_id_from_text(testid)
 
                             if '0HC' in testid:
                                 points_element = button.query_selector(
@@ -714,8 +813,16 @@ class DraftKingsScraper:
                                 points = (
                                     points_element.inner_text().strip() if points_element else ''
                                 )
+                                odds_element = button.query_selector(
+                                    f"[data-testid='{BUTTON_ODDS_DATA_TESTID}']"
+                                )
+                                odds = odds_element.inner_text().strip() if odds_element else ''
                                 if away_spread == 'N/A':
                                     away_spread = points
+                                    away_spread_odds = odds
+                                elif home_spread == 'N/A':
+                                    home_spread = points
+                                    home_spread_odds = odds
                             elif '0OU' in testid:
                                 title_element = button.query_selector(
                                     f"[data-testid='{BUTTON_TITLE_DATA_TESTID}']"
@@ -727,8 +834,16 @@ class DraftKingsScraper:
                                 points = (
                                     points_element.inner_text().strip() if points_element else ''
                                 )
+                                odds_element = button.query_selector(
+                                    f"[data-testid='{BUTTON_ODDS_DATA_TESTID}']"
+                                )
+                                odds = odds_element.inner_text().strip() if odds_element else ''
                                 if over_total == 'N/A' and title.upper() == 'O':
                                     over_total = points
+                                    over_odds = odds
+                                elif under_total == 'N/A' and title.upper() == 'U':
+                                    under_total = points
+                                    under_odds = odds
                             elif '0ML' in testid:
                                 odds_element = button.query_selector(
                                     f"[data-testid='{BUTTON_ODDS_DATA_TESTID}']"
@@ -746,10 +861,17 @@ class DraftKingsScraper:
                         self._build_markets(
                             away_team,
                             home_team,
+                            event_id,
                             away_spread,
+                            away_spread_odds,
+                            home_spread,
+                            home_spread_odds,
                             away_moneyline,
                             home_moneyline,
                             over_total,
+                            over_odds,
+                            under_total,
+                            under_odds,
                         )
                     )
 
@@ -797,8 +919,15 @@ class DraftKingsScraper:
 
                     # Odds: try aria-label on outcome buttons (stable semantic attribute)
                     moneyline = 'N/A'
+                    home_moneyline = 'N/A'
                     spread = 'N/A'
+                    spread_odds = 'N/A'
+                    home_spread = 'N/A'
+                    home_spread_odds = 'N/A'
                     over_under = 'N/A'
+                    over_odds = 'N/A'
+                    under_total = 'N/A'
+                    under_odds = 'N/A'
 
                     # Find outcome cells near these team elements
                     game_block = team_elements[team_index].query_selector(
@@ -812,18 +941,36 @@ class DraftKingsScraper:
                             "button[aria-label*='Moneyline'], "
                             "[class*='sportsbook-outcome-cell__body']"
                         )
-                        spread, moneyline, over_under = self._extract_raw_markets(
-                            outcome_cells, away_team
+                        (
+                            spread,
+                            spread_odds,
+                            home_spread,
+                            home_spread_odds,
+                            moneyline,
+                            home_moneyline,
+                            over_under,
+                            over_odds,
+                            under_total,
+                            under_odds,
+                        ) = self._extract_raw_markets(
+                            outcome_cells, away_team, home_team
                         )
 
                     markets.extend(
                         self._build_markets(
                             away_team,
                             home_team,
+                            None,
                             spread,
+                            spread_odds,
+                            home_spread,
+                            home_spread_odds,
                             moneyline,
-                            'N/A',
+                            home_moneyline,
                             over_under,
+                            over_odds,
+                            under_total,
+                            under_odds,
                         )
                     )
 

@@ -361,7 +361,9 @@ class EloMoneylineModel:
     home_advantage: float = 100.0
 
     @classmethod
-    def fit(cls, games: pd.DataFrame, k_factor: float = 20.0) -> EloMoneylineModel:
+    def fit(
+        cls, games: pd.DataFrame, k_factor: float = 20.0, home_advantage: float = 100.0
+    ) -> EloMoneylineModel:
         """
         Estimate Elo ratings by processing games in chronological order.
         
@@ -378,14 +380,14 @@ class EloMoneylineModel:
             away_team = str(row['away_team'])
             home_rating = ratings.get(home_team, 1500.0)
             away_rating = ratings.get(away_team, 1500.0)
-            expected_home = _elo_expected_score(home_rating + 100.0, away_rating)
+            expected_home = _elo_expected_score(home_rating + home_advantage, away_rating)
             actual_home = 1.0 if row['winner'] == home_team else 0.0
             margin = abs(float(row['pts_home']) - float(row['pts_away']))
             multiplier = ((margin + 3.0) ** 0.8) / 7.5
             change = k_factor * multiplier * (actual_home - expected_home)
             ratings[home_team] = home_rating + change
             ratings[away_team] = away_rating - change
-        return cls(ratings=ratings)
+        return cls(ratings=ratings, home_advantage=home_advantage)
 
     def predict_home_win_probability(self, home_team: str, away_team: str) -> float:
         """

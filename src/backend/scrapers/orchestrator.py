@@ -108,7 +108,7 @@ class LiveOddsScraper:
         Runs each source scraper, stores combined results in self.games, and logs the run using a per-run `scrape_session` context attached to log entries. If a source returns results, those results are displayed via display_games.
         
         Returns:
-            list[GameOdds]: Aggregated list of scraped games (may be empty).
+            list[Market]: Aggregated list of scraped markets (may be empty).
         """
         session_id = uuid.uuid4().hex[:8]
         with logger.contextualize(scrape_session=session_id):

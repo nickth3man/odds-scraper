@@ -64,26 +64,25 @@ def enrich_live_odds_rows(
 
     for market in markets:
         true_probs = devig_market(market)
+        h2h_home_probability: float | None = None
+
+        if (
+            market.market_type == MarketType.H2H
+            and enrichment_service is not None
+            and len(market.outcomes) == 2
+        ):
+            away_stats = enrichment_service.get_team_stats(market.outcomes[0].name)
+            home_stats = enrichment_service.get_team_stats(market.outcomes[1].name)
+            if away_stats and home_stats:
+                h2h_home_probability = compute_model_probability(home_stats, away_stats)
 
         for i, outcome in enumerate(market.outcomes):
             row_prob = true_probs[i] if i < len(true_probs) else 0.0
             prob_source = 'devig'
 
-            if (
-                market.market_type == MarketType.H2H
-                and enrichment_service is not None
-                and len(market.outcomes) == 2
-            ):
-                team_name = outcome.name
-                opp_idx = 1 if i == 0 else 0
-                opp_name = market.outcomes[opp_idx].name
-
-                team_stats = enrichment_service.get_team_stats(team_name)
-                opp_stats = enrichment_service.get_team_stats(opp_name)
-
-                if team_stats and opp_stats:
-                    row_prob = compute_model_probability(team_stats, opp_stats)
-                    prob_source = 'nba_api'
+            if h2h_home_probability is not None:
+                row_prob = 1.0 - h2h_home_probability if i == 0 else h2h_home_probability
+                prob_source = 'nba_api'
 
             if row_prob == 0.0 and prob_source == 'devig':
                 continue
