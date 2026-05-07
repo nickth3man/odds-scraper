@@ -21,6 +21,19 @@ from backend.data.nba_dataset import (
 
 
 def create_fixture_database(path: Path) -> None:
+    """
+    Create a SQLite fixture database at the given path with pre-populated tables and sample data.
+    
+    The function creates a SQLite database file at `path` and populates it with three tables and deterministic fixture rows useful for tests:
+    - games_index: game-level metadata (game_id, game_date, season_year, home, away, winner, pts_home, pts_away, margin, odds_home, odds_away).
+    - game_odds: odds snapshots per game (including decimal and moneyline fields, snapshot marker such as 'open'/'close', and source_url).
+    - team_boxscores: team-level boxscore and team-strength metrics per game (including off/def/net ratings and other boxscore stats).
+    
+    Inserts three fixture games (g1–g3), multiple odds snapshots (open and close) for each game, and two team boxscore rows per game (home and away for teams 'AAA' and 'BBB'). The database is committed before the connection is closed.
+    
+    Parameters:
+        path (Path): Filesystem path where the SQLite database file will be created or overwritten.
+    """
     conn = sqlite3.connect(path)
     try:
         conn.execute(

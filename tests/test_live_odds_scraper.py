@@ -20,13 +20,29 @@ class _JsonResponse:
 
 
 def _load_fixture(filename: str) -> dict:
+    """
+    Load a JSON fixture file from the repository's test fixtures directory.
+    
+    Parameters:
+        filename (str): Name of the fixture file (including extension) located in src/backend/fixtures.
+    
+    Returns:
+        dict: Parsed JSON content of the fixture file.
+    """
     fixture_path = Path(__file__).parent.parent / 'src' / 'backend' / 'fixtures' / filename
     with open(fixture_path) as f:
         return json.load(f)
 
 
 def _make_sample_market() -> Market:
-    """Helper to build a sample ESPN H2H market for monkeypatching."""
+    """
+    Create a sample ESPN-style head-to-head Market for use in tests.
+    
+    Returns:
+        market (Market): A H2H Market for an NBA event with two outcomes:
+            - "OKC Thunder" with american odds -135
+            - "Boston Celtics" with american odds +120
+    """
     return Market(
         key='espn_h2h_1',
         name='OKC Thunder vs Boston Celtics Moneyline',
@@ -51,10 +67,22 @@ def test_get_all_games_resets_previous_results(monkeypatch):
     market = _make_sample_market()
 
     def scrape_espn(self):
+        """
+        Append a market to the scraper's internal games list and return it as a single-item list.
+        
+        Returns:
+            list: A list containing the appended market.
+        """
         self.games.extend([market])
         return [market]
 
     def scrape_no_draftkings_games(self):
+        """
+        Produce an empty list indicating no DraftKings games are available.
+        
+        Returns:
+            list: An empty list representing no DraftKings games.
+        """
         return []
 
     def suppress_display(self, *_args):
@@ -213,6 +241,23 @@ def test_scrape_espn_uses_scoreboard_fallback_when_header_api_returns_non_json(m
             return None
 
         def json(self):
+            """
+            Mock ESPN-style JSON payload representing a single event with odds.
+            
+            The returned dictionary mimics an ESPN scoreboard/header response containing one event:
+            - events: list of event objects
+              - id (str): event identifier ('401869412')
+              - date (str): ISO-8601 timestamp ('2026-04-30T23:00Z')
+              - competitions: list with a single competition containing:
+                - competitors: two competitors with 'homeAway' set to 'away' and 'home' and nested team.displayName values ('OKC Thunder', 'Boston Celtics')
+                - odds: list containing one provider entry (provider.displayName == 'Draft Kings') with:
+                  - moneyline: numeric american-style odds under away.close.odds (-135) and home.close.odds (120)
+                  - pointSpread: away.close.line present (-2.5)
+                  - total: over.close.line present (223.5)
+            
+            Returns:
+                dict: A synthetic ESPN-style payload matching the structure described above.
+            """
             return {
                 'events': [
                     {
@@ -285,6 +330,19 @@ def test_parse_espn_header_api_fixture():
 
     # Helper to find markets by event_id
     def find(event_id: str, mtype: MarketType) -> Market:
+        """
+        Finds the Market with the given event identifier and market type.
+        
+        Parameters:
+            event_id (str): Identifier of the event to match.
+            mtype (MarketType): Type of market to match.
+        
+        Returns:
+            Market: The first Market whose `event_id` equals `event_id` and whose `market_type` equals `mtype`.
+        
+        Raises:
+            StopIteration: If no matching Market is found.
+        """
         return next(m for m in markets if m.event_id == event_id and m.market_type == mtype)
 
     # DET @ ORL -- away (DET) favored by 3.5
@@ -344,6 +402,18 @@ def test_parse_espn_scoreboard_api_fixture():
     assert len(markets) == 3
 
     def find(mtype: MarketType) -> Market:
+        """
+        Select the first market from the surrounding `markets` collection matching the given market type.
+        
+        Parameters:
+            mtype (MarketType): The market type to find.
+        
+        Returns:
+            Market: The first Market whose `market_type` equals `mtype`.
+        
+        Raises:
+            StopIteration: If no matching market is found.
+        """
         return next(m for m in markets if m.market_type == mtype)
 
     h2h = find(MarketType.H2H)
@@ -404,14 +474,10 @@ def test_scrape_espn_nba_odds_returns_empty_when_header_api_has_no_games(
 
     def return_empty_sports(*_args, **_kwargs):
         """
-        Produce a fake HTTP JSON response containing an empty `sports` list for tests.
-
-        Parameters:
-            *_args: Ignored.
-            **_kwargs: Ignored.
-
+        Produce a fake HTTP JSON response for tests with an empty 'sports' list.
+        
         Returns:
-            _JsonResponse: A response whose JSON payload is {'sports': []}.
+            _JsonResponse: Response whose JSON payload is {'sports': []}.
         """
         return _JsonResponse({'sports': []})
 

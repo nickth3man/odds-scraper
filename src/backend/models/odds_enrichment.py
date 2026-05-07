@@ -10,7 +10,17 @@ from backend.models.ev_calculator import EVCalculator, devig_market
 def format_expected_value_per_100(
     calculator: EVCalculator, american_odds: int | float, model_probability: float
 ) -> str:
-    """Compute the expected value per $100 staked for a single odds value."""
+    """
+    Format the expected value for a $100 stake using the provided EV calculator.
+    
+    Parameters:
+        calculator (EVCalculator): Calculator used to compute expected value.
+        american_odds (int | float): American-style odds (e.g., -150, +200).
+        model_probability (float): Probability of the outcome as a decimal between 0 and 1.
+    
+    Returns:
+        str: Expected value formatted as US dollars with two decimal places (e.g., '$12.34').
+    """
     expected_value = calculator.calculate_expected_value(
         model_probability, american_odds, stake=100
     )
@@ -23,8 +33,31 @@ def enrich_live_odds_rows(
     source: str = '',
 ) -> list[dict]:
     """
-    Enrich scraper Market mappings with expected-value columns and optional model-derived team data.
-    Returns flattened rows for each outcome.
+    Produce flattened rows of enriched outcome data for the given markets, including a computed true probability and expected value per $100 stake.
+    
+    Parameters:
+        markets (Sequence[Market]): Sequence of Market objects whose outcomes will be converted into rows.
+        enrichment_service (TeamEnrichmentService | None): Optional service used to compute model probabilities for head-to-head markets; when provided and both teams' stats are available, the row probability will be sourced from the model.
+        source (str): Identifier for the data source included in each row's `source` and `id` fields.
+    
+    Returns:
+        list[dict]: A list of dictionaries, one per outcome, containing the following keys:
+            - id: Unique identifier composed of market key, outcome name, and source.
+            - event_id: Market event identifier.
+            - market_name: Human-readable market name.
+            - market_type: Market type value.
+            - bet_name: Outcome name.
+            - point: Outcome point or 'N/A' when not present.
+            - odds: American odds for the outcome.
+            - true_prob: Probability as a percentage string formatted to one decimal place (e.g., '52.3%').
+            - true_prob_raw: Numeric probability in [0.0, 1.0].
+            - ev_per_100: Expected value formatted as dollars per $100 stake (e.g., '$12.34').
+            - prob_source: Source of the probability ('devig' or 'nba_api').
+            - source: The provided source identifier.
+    
+    Notes:
+        - For head-to-head markets (exactly two outcomes), the enrichment_service may replace devig-derived probabilities with model probabilities when both teams' stats are available.
+        - Rows whose devig-derived probability is 0.0 are omitted unless replaced by a model probability.
     """
     calculator = EVCalculator()
     rows: list[dict] = []
@@ -83,7 +116,16 @@ def merge_source_rows(
     enrichment_service: TeamEnrichmentService | None = None,
 ) -> list[dict]:
     """
-    Merge freshly scraped markets for a given source into the existing table rows.
+    Merge new rows produced from the given markets for a specific source with the existing rows, replacing any existing rows that belong to that source.
+    
+    Parameters:
+        existing_rows (list[dict]): Current table rows. Each row is expected to include a 'source' key.
+        markets (Sequence[Market]): Markets to convert into new rows for the provided source.
+        source (str): Identifier of the source whose old rows should be replaced by rows derived from `markets`.
+        enrichment_service (TeamEnrichmentService | None): Optional service used to enrich head-to-head markets; if omitted, enrichment using external team statistics is skipped.
+    
+    Returns:
+        list[dict]: A combined list containing a shallow copy of all rows from `existing_rows` whose 'source' differs from `source`, followed by newly generated rows for `markets` associated with `source`.
     """
     rows_from_other_sources = [dict(row) for row in existing_rows if row.get('source') != source]
     return rows_from_other_sources + enrich_live_odds_rows(markets, enrichment_service, source)

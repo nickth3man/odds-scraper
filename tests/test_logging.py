@@ -84,7 +84,9 @@ class TestLoguruImports:
         assert 'from loguru import logger' in source
 
     def test_draftkings_scraper_uses_loguru(self) -> None:
-        """DraftKingsScraper module imports from loguru."""
+        """
+        Checks that backend.scrapers.draftkings.scraper imports Loguru's `logger` by inspecting its source for the text "from loguru import logger".
+        """
         from backend.scrapers.draftkings import scraper as mod
 
         source = __import__('inspect').getsource(mod)

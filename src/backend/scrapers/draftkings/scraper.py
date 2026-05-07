@@ -243,7 +243,14 @@ USER_AGENT = (
 
 
 def _parse_american(raw: str) -> float | None:
-    """Convert a raw odds string like '+150' or '-110' to float, or return None."""
+    """
+    Parse an American-style odds string into a numeric value.
+    
+    Accepts strings like "+150" or "-110" and attempts to normalize them; returns None for empty input, the literal "N/A", or when no parsable odds can be extracted.
+    
+    Returns:
+        float | None: The parsed odds as a float (e.g., '+150' -> 150.0, '-110' -> -110.0), or `None` if parsing failed.
+    """
     cleaned = raw.strip()
     if not cleaned or cleaned == 'N/A':
         return None
@@ -308,10 +315,9 @@ class DraftKingsScraper:
     @staticmethod
     def _cleanup(session: _BrowserSession | None) -> None:
         """
-        Close the Playwright page, context, and browser for the given session, then stop the Playwright driver.
-
-        If `session` is `None` this is a no-op. Failures while closing individual resources are logged as warnings; the Playwright driver is stopped after attempting to close resources.
-
+        Close and release Playwright resources associated with the session and stop the Playwright driver.
+        
+        If `session` is `None`, this function does nothing. It attempts to close the page, context, and browser in that order; failures closing individual resources are logged as warnings. After attempting to close resources, the Playwright driver is stopped.
         Parameters:
             session (_BrowserSession | None): Playwright resources to clean up.
         """
@@ -440,11 +446,16 @@ class DraftKingsScraper:
             self._cleanup(session)
 
     def parse_games(self, page) -> list[Market]:
-        """Parse games from DraftKings page using Playwright.
-
-        When parsel is available, HTML is extracted once from the page and
-        parsed with CSS selectors — no repeated element queries.
-        The Playwright paths remain as a fallback.
+        """
+        Parse a DraftKings page and produce a list of Market objects representing the scraped games.
+        
+        Prefers a single-pass HTML parse using `parsel` when available, falling back to the component-builder (`parse_cb_market`) layout parser and then to the legacy event-cell parser (`parse_event_cells`) if needed.
+        
+        Parameters:
+            page: Playwright Page instance to parse.
+        
+        Returns:
+            markets (list[Market]): List of parsed Market objects; empty list if no games were found.
         """
         if _PARSEL_AVAILABLE and _HtmlSelector is not None:
             html = page.content()
@@ -469,7 +480,25 @@ class DraftKingsScraper:
         home_moneyline_raw: str,
         over_total_raw: str,
     ) -> list[Market]:
-        """Convert raw parsed game fields into a list of Market objects."""
+        """
+        Constructs Market objects (moneyline, spread, and total) for a single game from raw parsed fields.
+        
+        Parses the provided raw strings and builds zero or more Market instances:
+        - Moneyline (H2H): includes an outcome for each side with a parsable American odd.
+        - Spread: includes away and home outcomes with point values if a spread can be parsed.
+        - Total: includes Over and Under outcomes with the parsed total points if available.
+        
+        Parameters:
+            away_team (str): Away team name.
+            home_team (str): Home team name.
+            away_spread_raw (str): Raw away spread text (signed number or other text); may be 'N/A' or unparsable.
+            away_moneyline_raw (str): Raw away moneyline/american odds text; may be 'N/A' or unparsable.
+            home_moneyline_raw (str): Raw home moneyline/american odds text; may be 'N/A' or unparsable.
+            over_total_raw (str): Raw over/total points text; may be 'N/A' or unparsable.
+        
+        Returns:
+            list[Market]: A list of Market objects for the game. Markets are omitted when their corresponding raw input cannot be parsed; moneyline outcomes are included only for sides with parsable odds.
+        """
         markets: list[Market] = []
 
         # H2H (moneyline) market
@@ -569,11 +598,16 @@ class DraftKingsScraper:
 
     @staticmethod
     def parse_html(html: str) -> list[Market]:
-        """Parse DraftKings NBA page HTML using parsel CSS selectors.
-
-        Accepts raw HTML string (e.g. from page.content()) and returns
-        a list of Market objects for each game.
-        Returns an empty list when parsel is not installed.
+        """
+        Extract DraftKings NBA markets from a page HTML string into Market objects.
+        
+        Parses the provided full page HTML (as returned by page.content()) and returns a list of Market instances representing parsed moneyline (H2H), spread, and total markets for each detected game. Templates that cannot be parsed are silently skipped. If the `parsel` library is not available, this function returns an empty list.
+        
+        Parameters:
+            html (str): Full HTML of a DraftKings NBA page.
+        
+        Returns:
+            list[Market]: A list of Market objects for parsed games; empty if none found or if `parsel` is unavailable.
         """
         if not _PARSEL_AVAILABLE or _HtmlSelector is None:
             return []
@@ -627,7 +661,17 @@ class DraftKingsScraper:
         return markets
 
     def parse_cb_market(self, page) -> list[Market]:
-        """Parse DraftKings games using cb-market__template structure."""
+        """
+        Parse DraftKings game templates rendered with the `cb-market__template` layout into Market objects.
+        
+        Iterates each market template on the provided Playwright page, extracts away/home team names and the first available spread, moneyline, and over total values from market buttons, and converts each game into one or more Market entries via the scraper's internal market builder.
+        
+        Parameters:
+            page (playwright.sync_api.Page): Playwright page positioned on a DraftKings listings page containing `cb-market__template` elements.
+        
+        Returns:
+            list[Market]: A list of parsed Market objects for all successfully read games; returns an empty list when no templates are found or parsing fails.
+        """
         markets: list[Market] = []
 
         try:
@@ -720,7 +764,14 @@ class DraftKingsScraper:
             return []
 
     def parse_event_cells(self, page) -> list[Market]:
-        """Parse DraftKings games using legacy event-cell structure."""
+        """
+        Parse the legacy DraftKings "event-cell" DOM and convert found game rows into Market objects.
+        
+        Attempts to locate team name elements in pairs (away, home), extracts nearby outcome cells for moneyline, spread, and totals, and builds corresponding Market entries. Returns an empty list if no games are found or if parsing fails.
+        
+        Returns:
+            list[Market]: Parsed markets for each detected game; empty list when none are found or on parse errors.
+        """
         markets: list[Market] = []
 
         try:
@@ -787,6 +838,16 @@ class DraftKingsScraper:
             return []
 
     def _extract_raw_markets(self, outcome_cells, team_name: str) -> tuple[str, str, str]:
+        """
+        Extract raw spread, moneyline, and total values from a sequence of outcome cells for a specific team.
+        
+        Parameters:
+        	outcome_cells (iterable): Iterable of DOM element-like objects supporting .inner_text() and .get_attribute().
+        	team_name (str): Team name used to disambiguate spread rows that reference a team.
+        
+        Returns:
+        	tuple[str, str, str]: A 3-tuple (spread, moneyline, over_under) where each value is the extracted string or `'N/A'` if not found.
+        """
         spread = 'N/A'
         moneyline = 'N/A'
         over_under = 'N/A'
@@ -852,11 +913,22 @@ class DraftKingsScraper:
         return results
 
     def parse_futures_category(self, page, bet_type: str) -> list[dict]:
-        """Parse a DraftKings futures betting category.
-
-        HTML structure: sportsbook-accordion__wrapper sections contain
-        content-sports-hierarchy-teams__team rows, each with a team name
-        <a> tag and an American-odds button.
+        """
+        Parse futures betting entries from a DraftKings futures category page.
+        
+        Extracts team names and their American odds from accordion-style futures listings. Each result is a dict with the team's display name, the extracted American odds (or 'N/A' when none found), the provided bet_type, and the source identifier.
+        
+        Parameters:
+            page: Playwright Page representing the loaded futures category.
+            bet_type (str): Category label to assign to each returned entry (e.g., 'champion').
+        
+        Returns:
+            list[dict]: A list of dictionaries with keys:
+                - 'team' (str): Team name as displayed on the page.
+                - 'odds' (str): American odds string if found, otherwise 'N/A'.
+                - 'bet_type' (str): The provided bet_type value.
+                - 'source' (str): Fixed string 'DraftKings'.
+            If no entries are parsed from the accordion structure, an alternative button-based extraction is attempted and its results are returned.
         """
         results: list[dict] = []
 

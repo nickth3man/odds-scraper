@@ -21,7 +21,15 @@ from .config import ESPN_API_PARAMS, ESPN_API_URL, ESPN_SCOREBOARD_API_URL
 
 
 def _parse_float_line(value: str | int | float | None) -> float | None:
-    """Strip leading alpha chars and convert to float."""
+    """
+    Convert an ESPN line string or numeric value into a float after removing any leading alphabetic characters.
+    
+    Parameters:
+        value (str | int | float | None): Input value which may include leading letters (e.g., "o220.5", "u210"). If `None`, returns `None`.
+    
+    Returns:
+        float | None: The parsed float if conversion succeeds, `None` if the input is `None` or cannot be converted to a float.
+    """
     if value is None:
         return None
     cleaned = re.sub(r'^[a-zA-Z]+', '', str(value))
@@ -35,6 +43,14 @@ class EspnOddsScraper:
     """Fetch and normalize NBA odds from ESPN JSON APIs."""
 
     def __init__(self, http: HttpClient | None = None):
+        """
+        Initialize the scraper with an HTTP client.
+        
+        If `http` is provided it is used as the instance HTTP client; otherwise a new `HttpClient` is created and assigned to `self._http`.
+        
+        Parameters:
+            http (HttpClient | None): Optional HTTP client to use for network requests. If `None`, a new `HttpClient` is created.
+        """
         self._http = http or HttpClient()
 
     def scrape_nba_odds(self) -> list[Market]:
@@ -77,16 +93,15 @@ class EspnOddsScraper:
 
     def parse_header_events(self, events: list) -> list[Market]:
         """
-        Normalize ESPN header API event objects into a list of Market objects.
-
-        For each event, up to three Market objects are produced: H2H (moneyline),
-        SPREADS, and TOTALS.
-
+        Convert ESPN header API event objects into normalized Market objects.
+        
+        Parses each event to extract teams and raw odds, producing up to three Market objects per event: moneyline (H2H), spreads, and totals. Events missing required fields are skipped; parse errors for individual events are caught and logged.
+        
         Parameters:
-            events (list): List of event objects returned by the ESPN header API.
-
+            events (list): Iterable of ESPN header API event dictionaries.
+        
         Returns:
-            list[Market]: A list of Market objects parsed from header API events.
+            list[Market]: A list of normalized Market objects built from the provided events.
         """
         markets: list[Market] = []
 
@@ -160,12 +175,10 @@ class EspnOddsScraper:
 
     def scrape_scoreboard_fallback(self) -> list[Market]:
         """
-        Fetches and normalizes NBA odds from ESPN's scoreboard API.
-
+        Attempt to fetch NBA odds from ESPN's scoreboard API and convert them into Market objects.
+        
         Returns:
-            list[Market]: A list of Market objects parsed from the scoreboard
-            response. Returns an empty list if no games are found or if the
-            fetch/parse fails.
+            list[Market]: Market objects parsed from the scoreboard response; an empty list if no games are found or if the fetch/parse fails.
         """
         try:
             response = self._http.get(
@@ -264,6 +277,15 @@ class EspnOddsScraper:
         return markets
 
     def select_scoreboard_odds(self, odds_list: list) -> dict | None:
+        """
+        Select the preferred odds entry from a scoreboard odds list, preferring providers whose name contains "draft".
+        
+        Parameters:
+            odds_list (list): A list of odds dictionaries returned by ESPN scoreboard data, each optionally containing a `provider` mapping with `displayName` or `name`.
+        
+        Returns:
+            dict | None: The first odds dictionary whose provider `displayName` or `name` contains "draft" (case-insensitive); if none match, the first element of `odds_list` when non-empty; otherwise `None`.
+        """
         for odds in odds_list:
             provider = odds.get('provider', {})
             provider_name = provider.get('displayName') or provider.get('name') or ''
@@ -281,10 +303,13 @@ class EspnOddsScraper:
         away_spread_raw: float | None,
         total_raw: float | None,
     ) -> list[Market]:
-        """Build H2H, SPREADS, and TOTALS markets from raw extracted values.
-
-        Markets with missing required data (e.g. no moneyline values) are
-        silently skipped.
+        """
+        Build H2H, SPREADS, and TOTALS Market objects for a single event from extracted raw values.
+        
+        Only markets with the required raw inputs are created: H2H requires both away and home moneyline values; SPREADS requires an away spread; TOTALS requires a total line. When created, spread and total outcomes use a default price equivalent to American -110.
+        
+        Returns:
+            list[Market]: A list of constructed Market objects (zero to three), one per market type that had sufficient input data.
         """
         result: list[Market] = []
 

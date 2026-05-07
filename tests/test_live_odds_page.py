@@ -19,6 +19,19 @@ def make_h2h_market(
     home_name: str = 'Boston Celtics',
     home_odds: float | int = 120,
 ) -> Market:
+    """
+    Create an NBA head-to-head (moneyline) Market for an event with two outcomes (away and home).
+    
+    Parameters:
+        event_id (str): Event identifier used as the market's `event_id` and to build the market `key` as '{event_id}-h2h'.
+        away_name (str): Display name for the away team outcome.
+        away_odds (float | int): American-format odds for the away team; converted to `NormalizedOdds`.
+        home_name (str): Display name for the home team outcome.
+        home_odds (float | int): American-format odds for the home team; converted to `NormalizedOdds`.
+    
+    Returns:
+        Market: An NBA H2H (Moneyline) Market with `market_type=MarketType.H2H`, `sport='nba'`, and two `Outcome` entries whose `price` values are produced by `NormalizedOdds.from_american`.
+    """
     return Market(
         key=f'{event_id}-h2h',
         name='Moneyline',
@@ -84,6 +97,14 @@ def test_enrich_live_odds_skips_outcomes_when_devig_fails():
 
 
 def test_merge_source_rows_replaces_only_refreshed_sportsbook_rows():
+    """
+    Verifies that merging refreshed rows replaces only rows from the specified sportsbook and preserves rows from other sportsbooks.
+    
+    Sets up an existing list with one ESPN row and one DraftKings row, provides refreshed ESPN markets, calls merge_source_rows for 'ESPN', and asserts that:
+    - the total row count equals the preserved non-ESPN rows plus the refreshed ESPN outcomes,
+    - DraftKings rows remain unchanged,
+    - ESPN rows are replaced by the refreshed outcomes and carry the new event_id values ('evt-new' for each ESPN outcome).
+    """
     existing_rows = [
         {
             'id': 'evt-old-h2h-Team X-ESPN',

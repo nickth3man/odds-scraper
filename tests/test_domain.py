@@ -151,7 +151,11 @@ class TestDevigMarket:
         assert sum(true_probs) == pytest.approx(1.0, abs=1e-9)
 
     def test_devig_empty_market(self):
-        """Empty market returns empty list."""
+        """
+        Verify devig_market handles a market with no outcomes.
+        
+        Constructs an empty Market and asserts that calling devig_market on it yields an empty list.
+        """
         market = Market(
             key='m4',
             name='Empty',

@@ -25,12 +25,12 @@ class TTLCache[T]:
 
     def get(self, key: str) -> T | None:
         """
-        Retrieve the cached value for `key` if it exists and has not expired.
-
-        If the stored entry has expired, it is removed from the cache and `None` is returned.
-
+        Retrieve the cached value for the given key if present and not expired.
+        
+        If the entry exists but has expired, it is removed from the cache.
+        
         Returns:
-            The cached value for `key` if present and not expired, `None` otherwise.
+            The cached value associated with `key` if present and not expired, `None` otherwise.
         """
         with self._lock:
             entry = self._store.get(key)
@@ -44,14 +44,14 @@ class TTLCache[T]:
 
     def set(self, key: str, value: T, ttl: float | None = None) -> None:
         """
-        Store a value in the cache under the given key with an associated time-to-live.
-
-        If `ttl` is provided it overrides the cache's default TTL; `ttl` is specified in seconds and controls how long the entry remains valid before expiring.
-
+        Store a value under the given key with an expiration based on the provided TTL or the cache's default.
+        
+        The entry will be considered expired after `ttl` seconds from now or after the cache's default TTL when `ttl` is `None`.
+        
         Parameters:
-                key (str): Cache key to store the value under.
-                value (T): Value to cache.
-                ttl (float | None): Optional time-to-live in seconds; when `None` the cache's default TTL is used.
+            key (str): Cache key.
+            value (T): Value to store.
+            ttl (float | None): Optional time-to-live in seconds; if `None`, the cache's default TTL is used.
         """
         with self._lock:
             expires_at = time.monotonic() + (ttl if ttl is not None else self._default_ttl)

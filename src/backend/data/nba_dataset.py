@@ -27,10 +27,28 @@ class NbaDatasetLoader:
     """Load canonical NBA historical data from the Sportsdata SQLite database."""
 
     def __init__(self, database_path: str | Path = DEFAULT_DATABASE_PATH) -> None:
+        """
+        Initialize the loader with the path to the SQLite database.
+        
+        Parameters:
+            database_path (str | Path): Filesystem path to the SQLite database file. Defaults to DEFAULT_DATABASE_PATH. The path is stored on the instance as a pathlib.Path in `self.database_path`.
+        """
         self.database_path = Path(database_path)
 
     def load_moneyline_games(self) -> pd.DataFrame:
-        """Load completed games that include moneyline odds and a known winner."""
+        """
+        Load completed games that have positive moneyline odds and a recorded winner.
+        
+        The returned DataFrame contains the columns:
+        `game_id`, `game_date`, `season_year`, `home_team`, `away_team`, `winner`,
+        `pts_home`, `pts_away`, `margin`, `odds_home`, and `odds_away`. Rows are
+        ordered by `game_date` then `game_id`, and `game_date` is parsed as a
+        datetime. Only games with `odds_home > 0`, `odds_away > 0`, non-null
+        `winner`, and non-null `pts_home`/`pts_away` are included.
+        
+        Returns:
+            pd.DataFrame: Per-game identifiers, scores, margin, and moneyline odds.
+        """
         return _read_sql(
             self.database_path,
             """
@@ -84,7 +102,20 @@ class NbaDatasetLoader:
         )
 
     def load_game_odds(self, snapshot: str = 'close') -> pd.DataFrame:
-        """Load one historical odds snapshot per game for EV backtesting."""
+        """
+        Load a single historical odds snapshot per game for expected-value backtesting.
+        
+        Parameters:
+            snapshot (str): Which odds snapshot to load; must be 'open' or 'close'.
+        
+        Returns:
+            pd.DataFrame: Rows ordered by game_date and game_id with columns
+                `game_id`, `game_date`, `odds_date`, `decimal_home`, `decimal_away`,
+                `moneyline_home`, and `moneyline_away`.
+        
+        Raises:
+            ValueError: If `snapshot` is not 'open' or 'close'.
+        """
         if snapshot not in {'open', 'close'}:
             raise ValueError("snapshot must be 'open' or 'close'")
 
@@ -116,6 +147,21 @@ def _read_sql(
     parse_dates: list[str],
     params: list[object] | None = None,
 ) -> pd.DataFrame:
+    """
+    Execute a SQL query against a SQLite database and return the result as a pandas DataFrame.
+    
+    Parameters:
+        database_path (Path): Path to the SQLite database file.
+        query (str): SQL query string to execute.
+        parse_dates (list[str]): Column names that should be parsed as datetimes.
+        params (list[object] | None): Optional sequence of parameters to bind to the query.
+    
+    Returns:
+        pd.DataFrame: A deep-copied DataFrame containing the query results with specified columns parsed as datetimes.
+        
+    Notes:
+        The database connection is always closed before returning.
+    """
     connection = sqlite3.connect(database_path)
     try:
         frame = pd.read_sql_query(query, connection, parse_dates=parse_dates, params=params)
@@ -127,7 +173,21 @@ def _read_sql(
 def build_moneyline_training_frame(
     loader: NbaDatasetLoader, windows: Sequence[int] = (5, 10, 20)
 ) -> pd.DataFrame:
-    """Build one ML-ready row per game using only team games played before that game."""
+    """
+    Builds a machine-learning-ready per-game DataFrame with pre-game team rolling features and target/differential columns.
+    
+    Parameters:
+        loader (NbaDatasetLoader): Data loader used to read games, boxscores, and odds from the dataset.
+        windows (Sequence[int]): Sequence of positive integers specifying the rolling-window sizes (in prior games) used to compute team-level features; must contain at least one value and all values must be >= 1.
+    
+    Returns:
+        pd.DataFrame: A DataFrame with one row per game containing:
+            - identifiers and metadata: `game_id`, `game_date`, `season_year`, `home_team`, `away_team`
+            - target: `home_win` (1 if home team won, 0 otherwise)
+            - market odds: `odds_home`, `odds_away`
+            - rolling features for each side and window using the pattern `{side}_{feature}_roll{window}` for every feature in TEAM_FEATURE_COLUMNS and every requested window
+            - baseline-window differential features: `net_rating_diff`, `off_rating_diff`, `def_rating_diff`, `efg_pct_diff`, `turnover_pct_diff`, `pace_diff`
+    """
     if not windows:
         raise ValueError('windows must contain at least one value')
     invalid_windows = [window for window in windows if window < 1]
@@ -227,7 +287,24 @@ class HistoricalMoneylineModel:
 
     @classmethod
     def fit(cls, training_frame: pd.DataFrame) -> HistoricalMoneylineModel:
-        """Fit a simple calibrated model from a moneyline training frame."""
+        """
+        Create a HistoricalMoneylineModel calibrated from a moneyline training frame.
+        
+        Computes a baseline logit from the mean home win rate, fits a scalar weight for
+        net-rating differentials, and extracts the latest per-team net ratings from the
+        frame.
+        
+        Parameters:
+        	training_frame (pd.DataFrame): Training rows containing `home_win` and the
+        		rolling net-rating features; must contain at least one row.
+        
+        Returns:
+        	HistoricalMoneylineModel: A model populated with `base_logit`, `net_rating_weight`,
+        		and `team_net_ratings`.
+        
+        Raises:
+        	ValueError: If `training_frame` is empty.
+        """
         if training_frame.empty:
             raise ValueError('training_frame must contain at least one row')
 
@@ -242,7 +319,19 @@ class HistoricalMoneylineModel:
         )
 
     def predict_home_win_probability(self, home_team: str, away_team: str) -> float:
-        """Predict the home team's win probability from latest rolling team ratings."""
+        """
+        Predict the probability that the home team wins using the latest available team net ratings.
+        
+        Parameters:
+        	home_team (str): Home team identifier matching keys of the model's `team_net_ratings`.
+        	away_team (str): Away team identifier matching keys of the model's `team_net_ratings`.
+        
+        Returns:
+        	probability (float): Probability of a home win as a float between 0.0 and 1.0.
+        
+        Raises:
+        	ValueError: If a rating for `home_team` or `away_team` is not available in `team_net_ratings`.
+        """
         if home_team not in self.team_net_ratings:
             raise ValueError(f'No historical rating available for home team: {home_team}')
         if away_team not in self.team_net_ratings:
@@ -252,7 +341,15 @@ class HistoricalMoneylineModel:
         return self.predict_home_win_probability_from_diff(rating_diff)
 
     def predict_home_win_probability_from_diff(self, net_rating_diff: float) -> float:
-        """Predict home-win probability from a pre-game net-rating differential."""
+        """
+        Predict the home team's win probability from a pre-game net-rating differential.
+        
+        Parameters:
+            net_rating_diff (float): Home team's net rating minus away team's net rating prior to the game.
+        
+        Returns:
+            probability (float): Estimated probability (0.0 to 1.0) that the home team wins.
+        """
         return _sigmoid(self.base_logit + self.net_rating_weight * net_rating_diff)
 
 
@@ -265,7 +362,16 @@ class EloMoneylineModel:
 
     @classmethod
     def fit(cls, games: pd.DataFrame, k_factor: float = 20.0) -> EloMoneylineModel:
-        """Fit final Elo ratings from chronological game results."""
+        """
+        Estimate Elo ratings by processing games in chronological order.
+        
+        Parameters:
+            games (pd.DataFrame): Game records containing the columns 'game_date', 'home_team', 'away_team', 'winner', 'pts_home', and 'pts_away'. Rows need not be pre-sorted; they will be processed in ascending 'game_date' order.
+            k_factor (float): Base Elo update scale applied to each game (default 20.0). Larger values produce larger rating changes per game.
+        
+        Returns:
+            EloMoneylineModel: A model instance whose `ratings` map each team to its final Elo rating after processing all games.
+        """
         ratings: dict[str, float] = {}
         for row in games.sort_values('game_date').to_dict(orient='records'):
             home_team = str(row['home_team'])
@@ -282,7 +388,12 @@ class EloMoneylineModel:
         return cls(ratings=ratings)
 
     def predict_home_win_probability(self, home_team: str, away_team: str) -> float:
-        """Predict home-win probability from fitted Elo ratings."""
+        """
+        Compute the home team's probability of winning using the model's fitted Elo ratings.
+        
+        Returns:
+            probability (float): Probability in [0.0, 1.0] that the home team wins.
+        """
         home_rating = self.ratings.get(home_team, 1500.0) + self.home_advantage
         away_rating = self.ratings.get(away_team, 1500.0)
         return _elo_expected_score(home_rating, away_rating)
@@ -311,7 +422,16 @@ class BacktestResult:
 
 
 def devig_decimal_moneyline(home_decimal: float, away_decimal: float) -> tuple[float, float]:
-    """Convert two decimal moneyline prices to fair probabilities by removing overround."""
+    """
+    Convert two decimal moneyline prices into normalized (fair) probabilities by removing the bookmaker's overround.
+    
+    Parameters:
+        home_decimal (float): Decimal odds for the home team.
+        away_decimal (float): Decimal odds for the away team.
+    
+    Returns:
+        (home_prob, away_prob): Tuple of probabilities where each probability equals its implied probability (1/decimal) normalized so the two sum to 1. Returns (0.0, 0.0) if both decimals imply zero total probability.
+    """
     home_implied = 1.0 / home_decimal
     away_implied = 1.0 / away_decimal
     total_implied = home_implied + away_implied
@@ -321,7 +441,21 @@ def devig_decimal_moneyline(home_decimal: float, away_decimal: float) -> tuple[f
 
 
 def calculate_brier_score(actual: Sequence[int], predicted: Sequence[float]) -> float:
-    """Calculate binary Brier score for calibrated probability evaluation."""
+    """
+    Compute the Brier score for binary outcomes.
+    
+    Calculates the mean squared error between actual binary outcomes (0 or 1) and predicted probabilities.
+    
+    Parameters:
+        actual (Sequence[int]): Sequence of binary outcomes (0 or 1).
+        predicted (Sequence[float]): Sequence of predicted probabilities (expected in [0, 1]).
+    
+    Returns:
+        float: Mean squared error between actual outcomes and predicted probabilities.
+    
+    Raises:
+        ValueError: If the input sequences are empty or have differing lengths.
+    """
     pairs = list(zip(actual, predicted, strict=True))
     if not pairs:
         raise ValueError('actual and predicted must contain at least one value')
@@ -329,7 +463,19 @@ def calculate_brier_score(actual: Sequence[int], predicted: Sequence[float]) -> 
 
 
 def calculate_log_loss(actual: Sequence[int], predicted: Sequence[float]) -> float:
-    """Calculate binary log-loss with clipping for numerical stability."""
+    """
+    Compute the binary log loss between true labels and predicted probabilities with clipping for numerical stability.
+    
+    Parameters:
+        actual (Sequence[int]): Sequence of true binary labels (0 or 1). Length must match `predicted`.
+        predicted (Sequence[float]): Sequence of predicted probabilities (expected in [0, 1]). Length must match `actual`.
+    
+    Returns:
+        float: Mean binary log loss (negative average log-likelihood).
+    
+    Raises:
+        ValueError: If `actual` and `predicted` are empty or have differing lengths.
+    """
     pairs = list(zip(actual, predicted, strict=True))
     if not pairs:
         raise ValueError('actual and predicted must contain at least one value')
@@ -344,7 +490,19 @@ def calculate_log_loss(actual: Sequence[int], predicted: Sequence[float]) -> flo
 def evaluate_temporal_split(
     training_frame: pd.DataFrame, train_fraction: float = 0.8
 ) -> EvaluationResult:
-    """Train on older games and evaluate probability quality on later games."""
+    """
+    Train a HistoricalMoneylineModel on earlier games and evaluate its probability predictions on later games.
+    
+    Parameters:
+        training_frame (pd.DataFrame): DataFrame of per-game training rows ordered by `game_date` containing at least the columns `game_date`, `home_win`, and `net_rating_diff`.
+        train_fraction (float): Fraction of rows to use for training (must be greater than 0 and less than 1).
+    
+    Returns:
+        EvaluationResult: Object containing `train_rows`, `test_rows`, `brier_score`, and `log_loss` computed on the holdout (later) portion.
+    
+    Raises:
+        ValueError: If `train_fraction` is not in (0, 1) or if the split yields an empty train or test set.
+    """
     if not 0.0 < train_fraction < 1.0:
         raise ValueError('train_fraction must be between 0 and 1')
 
@@ -372,7 +530,16 @@ def evaluate_temporal_split(
 def evaluate_market_baseline(
     training_frame: pd.DataFrame, odds_frame: pd.DataFrame
 ) -> EvaluationResult:
-    """Evaluate de-vigged market-implied probabilities against actual outcomes."""
+    """
+    Evaluate the market baseline by comparing de-vigged decimal odds to actual home-win outcomes.
+    
+    Parameters:
+        training_frame (pd.DataFrame): DataFrame containing game identifiers and actual outcomes; must include a `game_id` column and a `home_win` column (0/1).
+        odds_frame (pd.DataFrame): DataFrame containing market decimal odds; must include `game_id`, `decimal_home`, and `decimal_away` columns.
+    
+    Returns:
+        EvaluationResult: EvaluationResult with `train_rows` set to 0, `test_rows` equal to the number of merged games, `brier_score` computed between actual home-win labels and de-vigged market probabilities, and `log_loss` computed likewise.
+    """
     merged = training_frame.merge(odds_frame, on='game_id', how='inner', suffixes=('', '_odds'))
     actual = [int(value) for value in merged['home_win'].tolist()]
     predicted = [
@@ -394,7 +561,19 @@ def run_moneyline_backtest(
     stake: float = 100.0,
     min_edge: float = 0.0,
 ) -> BacktestResult:
-    """Backtest flat-stake bets where model probability beats de-vigged market probability."""
+    """
+    Run a flat-stake backtest comparing a model's probabilities to de-vigged market probabilities and settle bets when the model shows sufficient edge.
+    
+    Parameters:
+        training_frame (pd.DataFrame): Per-game feature frame containing `game_id`, `home_win`, and `net_rating_diff`.
+        odds_frame (pd.DataFrame): Odds frame containing `game_id`, `decimal_home`, and `decimal_away`.
+        model (HistoricalMoneylineModel): Probability model used to produce home win probabilities from `net_rating_diff`.
+        stake (float): Fixed stake placed on each bet when an edge is taken.
+        min_edge (float): Minimum positive edge (model probability minus market probability) required to place a bet.
+    
+    Returns:
+        BacktestResult: Aggregated backtest metrics including number of evaluated games, bets placed, total staked, profit, ROI, and average edge.
+    """
     merged = training_frame.merge(odds_frame, on='game_id', how='inner', suffixes=('', '_odds'))
     profit = 0.0
     bet_count = 0
@@ -436,6 +615,24 @@ def run_moneyline_backtest(
 
 
 def _build_team_rolling_features(boxscores: pd.DataFrame, windows: Sequence[int]) -> pd.DataFrame:
+    """
+    Compute prior-game rolling means of team statistics for specified window sizes.
+    
+    Parameters:
+        boxscores (pd.DataFrame): Team boxscore rows ordered by game with columns at minimum
+            'season_year', 'team_abbreviation', 'game_date', 'game_id' and all names listed in
+            TEAM_FEATURE_COLUMNS.
+        windows (Sequence[int]): Sequence of positive integer window sizes (number of prior games)
+            for which to compute rolling means.
+    
+    Returns:
+        pd.DataFrame: A frame with columns:
+            - 'game_id'
+            - 'team_abbreviation'
+            - one column per feature and window named '{feature}_roll{window}',
+              containing the mean of that feature over the specified number of prior games
+              (the current game's value is excluded).
+    """
     sorted_boxscores = boxscores.sort_values(
         ['season_year', 'team_abbreviation', 'game_date', 'game_id']
     ).copy()
@@ -459,6 +656,18 @@ def _build_team_rolling_features(boxscores: pd.DataFrame, windows: Sequence[int]
 
 
 def _prefix_team_features(features: pd.DataFrame, side: str) -> pd.DataFrame:
+    """
+    Prefix team feature columns with the given side.
+    
+    Rename `team_abbreviation` to `{side}_team` and prepend `{side}_` to every column except `game_id` and `team_abbreviation`.
+    
+    Parameters:
+        features (pd.DataFrame): DataFrame containing team-level features including `team_abbreviation` and `game_id`.
+        side (str): Prefix to apply to team feature columns (e.g., `"home"` or `"away"`).
+    
+    Returns:
+        pd.DataFrame: A new DataFrame with `team_abbreviation` renamed to `{side}_team` and other feature columns (except `game_id`) renamed with the `{side}_` prefix.
+    """
     return features.rename(
         columns={
             'team_abbreviation': f'{side}_team',
@@ -472,6 +681,18 @@ def _prefix_team_features(features: pd.DataFrame, side: str) -> pd.DataFrame:
 
 
 def _fit_net_rating_weight(training_frame: pd.DataFrame) -> float:
+    """
+    Estimate a scalar weight for the net-rating differential based on the mean separation
+    between games won by the home team and games lost by the home team.
+    
+    If there are no winners or no losers in the frame, or if the mean separation is zero,
+    this returns a default weight of 0.04. Otherwise the weight is the sign of the
+    separation multiplied by min(|separation| / 400.0, 0.08).
+    
+    Returns:
+        float: Weight to apply to `net_rating_diff` (positive when higher net-rating favors
+        home wins, negative when it disfavors them).
+    """
     winners = training_frame.loc[training_frame['home_win'] == 1, 'net_rating_diff']
     losers = training_frame.loc[training_frame['home_win'] == 0, 'net_rating_diff']
     if winners.empty or losers.empty:
@@ -486,6 +707,21 @@ def _fit_net_rating_weight(training_frame: pd.DataFrame) -> float:
 
 
 def _latest_team_net_ratings(training_frame: pd.DataFrame) -> dict[str, float]:
+    """
+    Extract the most recent net rating value for each team from a chronological training frame.
+    
+    Parameters:
+        training_frame (pd.DataFrame): DataFrame sorted by `game_date` (or containing `game_date`) and containing columns
+            `home_team`, `away_team`, and at least one pair of net rating columns whose names start with
+            `home_net_rating_roll` and `away_net_rating_roll` (e.g., `home_net_rating_roll10` / `away_net_rating_roll10`).
+    
+    Returns:
+        dict[str, float]: Mapping from team identifier (string) to the team's latest net rating (float). For teams
+        that appear multiple times, the value from the last (most recent) game in chronological order is used.
+    
+    Raises:
+        ValueError: If no matching `home_net_rating_roll*` or `away_net_rating_roll*` column exists in `training_frame`.
+    """
     ratings: dict[str, float] = {}
     home_rating_column = _first_existing_column(training_frame, 'home_net_rating_roll')
     away_rating_column = _first_existing_column(training_frame, 'away_net_rating_roll')
@@ -504,6 +740,19 @@ def _latest_team_net_ratings(training_frame: pd.DataFrame) -> dict[str, float]:
 
 
 def _first_existing_column(frame: pd.DataFrame, prefix: str) -> str:
+    """
+    Find the first column name in `frame` that begins with `prefix`, preferring the `{prefix}10` variant.
+    
+    Parameters:
+        frame (pd.DataFrame): DataFrame whose columns will be searched.
+        prefix (str): Column name prefix to match.
+    
+    Returns:
+        str: The name of the preferred matching column (returns `f"{prefix}10"` if present), otherwise the first column that starts with `prefix`.
+    
+    Raises:
+        ValueError: If no column in `frame` starts with `prefix`.
+    """
     preferred = f'{prefix}10'
     if preferred in frame.columns:
         return preferred
@@ -514,23 +763,70 @@ def _first_existing_column(frame: pd.DataFrame, prefix: str) -> str:
 
 
 def _settle_decimal_bet(won: bool, decimal_odds: float, stake: float) -> float:
+    """
+    Compute the profit for a settled decimal-odds bet.
+    
+    Parameters:
+        won (bool): True if the bet was successful (won), False otherwise.
+        decimal_odds (float): The decimal odds offered for the bet (e.g., 2.5).
+        stake (float): The amount staked on the bet.
+    
+    Returns:
+        float: Profit amount: `stake * (decimal_odds - 1.0)` if `won` is True, `-stake` if `won` is False.
+    """
     if won:
         return stake * (decimal_odds - 1.0)
     return -stake
 
 
 def _elo_expected_score(rating: float, opponent_rating: float) -> float:
+    """
+    Compute the expected score (win probability) for a team given its Elo rating and an opponent's rating.
+    
+    Parameters:
+        rating (float): Elo rating of the team.
+        opponent_rating (float): Elo rating of the opponent.
+    
+    Returns:
+        float: Expected score as a probability between 0 and 1.
+    """
     return 1.0 / (1.0 + 10 ** ((opponent_rating - rating) / 400.0))
 
 
 def _clip_probability(probability: float) -> float:
+    """
+    Clamp a probability value to the inclusive range 0.001 through 0.999.
+    
+    Returns:
+        float: The input probability constrained to be at least 0.001 and at most 0.999.
+    """
     return min(max(probability, 0.001), 0.999)
 
 
 def _logit(probability: float) -> float:
+    """
+    Compute the logit (log-odds) of a probability with clipping for numerical stability.
+    
+    The input probability is clipped to the interval [0.001, 0.999] before computing the log-odds to avoid infinite values.
+    
+    Parameters:
+        probability (float): A probability value, typically between 0 and 1.
+    
+    Returns:
+        float: The log-odds value computed as log(p / (1 - p)) after clipping.
+    """
     clipped = _clip_probability(probability)
     return log(clipped / (1.0 - clipped))
 
 
 def _sigmoid(value: float) -> float:
+    """
+    Compute the logistic sigmoid of a real-valued input.
+    
+    Parameters:
+        value (float): Input value (e.g., log-odds or score difference).
+    
+    Returns:
+        probability (float): A value strictly between 0 and 1 computed as 1 / (1 + exp(-value)).
+    """
     return 1.0 / (1.0 + exp(-value))
