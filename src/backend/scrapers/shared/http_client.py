@@ -209,7 +209,17 @@ class HttpClient:
         }
 
     def _resolve_domain(self, url: str) -> str:
-        """Extract a rate-limiting key from *url* (e.g. 'espn.com')."""
+        """
+        Compute an effective domain key for per-domain rate limiting.
+
+        Attempts to extract a registrable/hostinfo-based domain from the given URL; if that is not available, falls back to the URL's network location (netloc).
+
+        Parameters:
+            url (str): The URL to extract the domain key from.
+
+        Returns:
+            domain (str): The effective domain key used for rate limiting (e.g., "espn.com").
+        """
         hostinfo = get_hostinfo(url)
         if hostinfo is not None and hostinfo[0] is not None:
             return hostinfo[0]
@@ -217,10 +227,10 @@ class HttpClient:
 
     def _wait_for_domain(self, domain: str) -> None:
         """
-        Ensure at least _min_delay seconds have elapsed since the last recorded request for the given domain by sleeping for the remaining time when necessary.
+        Enforce per-domain minimum inter-request delay by sleeping until the configured interval has passed since the last request for the given domain.
 
         Parameters:
-            domain (str): Effective domain key used for per-domain rate limiting.
+            domain (str): Effective domain key used to track and apply per-domain rate limiting.
         """
         if domain not in self._domain_timestamps:
             return
@@ -233,16 +243,10 @@ class HttpClient:
     @staticmethod
     def _log_retry_attempt(retry_state) -> None:
         """
-        Log a warning before tenacity sleeps between retry attempts.
-
-        Extracts the attempt number and the exception (when present) from the provided
-        tenacity retry state and logs a warning containing the attempt number, the
-        configured maximum attempts, the exception type name, and the exception value.
+        Log a retry warning before tenacity sleeps between attempts.
 
         Parameters:
-            retry_state (tenacity.RetryCallState): The tenacity retry state passed to
-                callback handlers; used to obtain attempt_number, outcome/exception,
-                and the retry object's configured stop/max attempts.
+            retry_state (tenacity.RetryCallState): Retry state provided by tenacity callbacks; used to obtain the current attempt number, the configured maximum attempts, and the exception (if any) for logging.
         """
         attempt = retry_state.attempt_number
         exception = retry_state.outcome.exception() if retry_state.outcome else None

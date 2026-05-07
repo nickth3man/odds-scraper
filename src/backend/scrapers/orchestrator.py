@@ -3,10 +3,11 @@ import uuid
 import pandas as pd
 from loguru import logger
 
+from backend.models.domain import Market
+
 from .draftkings.scraper import DraftKingsScraper
 from .espn.scraper import EspnOddsScraper
 from .shared.http_client import HttpClient
-from .shared.parsers import GameOdds
 
 
 class LiveOddsScraper:
@@ -29,18 +30,27 @@ class LiveOddsScraper:
     # ============ DRAFTKINGS SCRAPING (Playwright) ============
 
     def scrape_draftkings_odds(self):
-        """Scrape live odds from DraftKings using Playwright."""
+        """
+        Retrieve live odds from DraftKings and append any returned markets to the scraper's game list.
+
+        Returns:
+            list[Market] | None: The markets returned by the DraftKings scraper, or `None` if no data was returned.
+        """
         games = self._draftkings.scrape_odds()
         if games:
             self.games.extend(games)
         return games
 
     @staticmethod
-    def parse_draftkings_html(html: str) -> list[GameOdds]:
-        """Compatibility wrapper for offline HTML parsing.
+    def parse_draftkings_html(html: str) -> list[Market]:
+        """
+        Parse DraftKings HTML into a list of Market objects for offline use.
 
-        Delegates to DraftKingsScraper.parse_html for consumers that still
-        call LiveOddsScraper.parse_draftkings_html(...).
+        Parameters:
+            html (str): Raw HTML markup from a DraftKings odds page.
+
+        Returns:
+            list[Market]: Parsed market records extracted from the HTML.
         """
         return DraftKingsScraper.parse_html(html)
 
@@ -73,10 +83,10 @@ class LiveOddsScraper:
 
     def display_games(self, games, source=''):
         """
-        Logs a formatted table of game odds at debug level.
+        Log a formatted table of game odds at debug level.
 
         Parameters:
-            games (Iterable[dict|GameOdds]): Sequence of game records to display; each item will be converted to a pandas DataFrame row.
+            games (Iterable[Market]): Sequence of Market objects to display; each item will be converted to a pandas DataFrame row.
             source (str): Optional source label included in the log context (e.g., "ESPN", "DRAFTKINGS").
         """
         if not games:
@@ -93,12 +103,12 @@ class LiveOddsScraper:
 
     def get_all_games(self):
         """
-        Orchestrates scraping of NBA odds from ESPN and DraftKings and aggregates the results.
+        Orchestrates scraping NBA odds from ESPN and DraftKings and returns the aggregated results.
 
-        Resets the internal games list, runs each source scraper, conditionally displays each source's results, and logs scraping activity within a per-run `scrape_session` context attached to log entries.
+        Runs each source scraper, stores combined results in self.games, and logs the run using a per-run `scrape_session` context attached to log entries. If a source returns results, those results are displayed via display_games.
 
         Returns:
-            list[GameOdds]: Aggregated list of scraped games (may be empty).
+            list[Market]: Aggregated list of scraped markets (may be empty).
         """
         session_id = uuid.uuid4().hex[:8]
         with logger.contextualize(scrape_session=session_id):

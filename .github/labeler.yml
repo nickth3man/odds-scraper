@@ -4,6 +4,29 @@ backend:
           - src/backend/**
           - tests/**/backend/**
 
+data-modeling:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/backend/data/**
+          - tests/test_nba_dataset.py
+
+domain-model:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/backend/models/domain.py
+          - src/backend/models/odds_enrichment.py
+          - src/backend/models/ev_calculator.py
+
+raw-data:
+  - changed-files:
+      - any-glob-to-any-file:
+          - raw/**
+          - data/**
+          - '**/*.sqlite'
+          - '**/*.db'
+          - '**/*.parquet'
+          - '**/*.csv'
+
 frontend:
   - changed-files:
       - any-glob-to-any-file:
@@ -23,6 +46,7 @@ ci:
       - any-glob-to-any-file:
           - .github/**
           - .coderabbit.yaml
+          - .gemini/**
           - .sourcery.yaml
           - .pr_agent.toml
 
@@ -30,9 +54,11 @@ docs:
   - changed-files:
       - any-glob-to-any-file:
           - README.md
+          - AGENTS.md
           - docs/**
           - CONTRIBUTING.md
           - SECURITY.md
+          - .gemini/styleguide.md
 
 configuration:
   - changed-files:

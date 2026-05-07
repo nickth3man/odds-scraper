@@ -146,6 +146,7 @@ class TestTeamEnrichmentServiceWithCache:
         """
         service = TeamEnrichmentService(cache_ttl=9999.0)
         service._cache.clear()
+        service._fetch_from_nba_api = lambda: {}  # type: ignore[method-assign]
         result = service.get_team_stats('Boston Celtics')
         assert result is None
 
@@ -172,6 +173,9 @@ class TestTeamStatsDataclass:
         assert stats.net_rating == 10.3
 
     def test_team_stats_is_frozen(self) -> None:
+        """
+        Verify that assigning to a field on a TeamStats instance raises AttributeError, confirming the dataclass is frozen/immutable.
+        """
         stats = _make_stats('BOS', net=5.0)
         with pytest.raises(AttributeError):
             stats.wins = 999  # type: ignore[misc]

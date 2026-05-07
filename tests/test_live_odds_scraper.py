@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from backend.models.domain import Market, MarketType, NormalizedOdds, Outcome
 from backend.scrapers import LiveOddsScraper
 from backend.scrapers.draftkings import DraftKingsScraper
 from backend.scrapers.espn import EspnOddsScraper
@@ -19,29 +20,69 @@ class _JsonResponse:
 
 
 def _load_fixture(filename: str) -> dict:
+    """
+    Load a JSON fixture file from the repository's test fixtures directory.
+
+    Parameters:
+        filename (str): Name of the fixture file (including extension) located in src/backend/fixtures.
+
+    Returns:
+        dict: Parsed JSON content of the fixture file.
+    """
     fixture_path = Path(__file__).parent.parent / 'src' / 'backend' / 'fixtures' / filename
     with open(fixture_path) as f:
         return json.load(f)
 
 
+def _make_sample_market() -> Market:
+    """
+    Create a sample ESPN-style head-to-head Market for use in tests.
+
+    Returns:
+        market (Market): A H2H Market for an NBA event with two outcomes:
+            - "OKC Thunder" with american odds -135
+            - "Boston Celtics" with american odds +120
+    """
+    return Market(
+        key='espn_h2h_1',
+        name='OKC Thunder vs Boston Celtics Moneyline',
+        sport='nba',
+        event_id='1',
+        market_type=MarketType.H2H,
+        outcomes=[
+            Outcome(
+                name='OKC Thunder',
+                price=NormalizedOdds.from_american(-135),
+            ),
+            Outcome(
+                name='Boston Celtics',
+                price=NormalizedOdds.from_american(120),
+            ),
+        ],
+    )
+
+
 def test_get_all_games_resets_previous_results(monkeypatch):
     scraper = LiveOddsScraper()
-    game = {
-        'date': '2026-04-30',
-        'home_team': 'Boston Celtics',
-        'away_team': 'OKC Thunder',
-        'matchup': 'OKC Thunder @ Boston Celtics',
-        'spread': '-2.5',
-        'moneyline': '-135',
-        'over_under': '223.5',
-        'source': 'ESPN',
-    }
+    market = _make_sample_market()
 
     def scrape_espn(self):
-        self.games.extend([game])
-        return [game]
+        """
+        Append a market to the scraper's internal games list and return it as a single-item list.
+
+        Returns:
+            list: A list containing the appended market.
+        """
+        self.games.extend([market])
+        return [market]
 
     def scrape_no_draftkings_games(self):
+        """
+        Produce an empty list indicating no DraftKings games are available.
+
+        Returns:
+            list: An empty list representing no DraftKings games.
+        """
         return []
 
     def suppress_display(self, *_args):
@@ -51,8 +92,8 @@ def test_get_all_games_resets_previous_results(monkeypatch):
     monkeypatch.setattr(LiveOddsScraper, 'scrape_draftkings_odds', scrape_no_draftkings_games)
     monkeypatch.setattr(LiveOddsScraper, 'display_games', suppress_display)
 
-    assert scraper.get_all_games() == [game]
-    assert scraper.get_all_games() == [game]
+    assert scraper.get_all_games() == [market]
+    assert scraper.get_all_games() == [market]
 
 
 def test_scrape_draftkings_odds_appends_games(monkeypatch):
@@ -138,6 +179,13 @@ def test_parse_draftkings_games_extracts_spread_moneyline_and_total():
             },
         ),
         FakeElement(
+            text='Boston Celtics +2.5\n-110',
+            attrs={
+                'aria-label': 'Boston Celtics Spread +2.5 -110',
+                'class': 'sportsbook-outcome-cell__body',
+            },
+        ),
+        FakeElement(
             text='OKC Thunder\n-135',
             attrs={
                 'aria-label': 'OKC Thunder Moneyline -135',
@@ -145,9 +193,23 @@ def test_parse_draftkings_games_extracts_spread_moneyline_and_total():
             },
         ),
         FakeElement(
+            text='Boston Celtics\n+115',
+            attrs={
+                'aria-label': 'Boston Celtics Moneyline +115',
+                'class': 'sportsbook-outcome-cell__body',
+            },
+        ),
+        FakeElement(
             text='Over 223.5\n-110',
             attrs={
                 'aria-label': 'Over 223.5 Total Points -110',
+                'class': 'sportsbook-outcome-cell__body',
+            },
+        ),
+        FakeElement(
+            text='Under 223.5\n-110',
+            attrs={
+                'aria-label': 'Under 223.5 Total Points -110',
                 'class': 'sportsbook-outcome-cell__body',
             },
         ),
@@ -163,13 +225,28 @@ def test_parse_draftkings_games_extracts_spread_moneyline_and_total():
     ]
     page = FakePage(elements=team_elements)
 
-    [game] = DraftKingsScraper().parse_games(page)
+    markets = DraftKingsScraper().parse_games(page)
 
-    assert game['away_team'] == 'OKC Thunder'
-    assert game['home_team'] == 'Boston Celtics'
-    assert game['spread'] == '-2.5'
-    assert game['moneyline'] == '-135'
-    assert game['over_under'] == '223.5'
+    # Should produce H2H, SPREADS, and TOTALS markets
+    h2h = next((m for m in markets if m.market_type == MarketType.H2H), None)
+    spreads = next((m for m in markets if m.market_type == MarketType.SPREADS), None)
+    totals = next((m for m in markets if m.market_type == MarketType.TOTALS), None)
+
+    assert h2h is not None
+    assert spreads is not None
+    assert totals is not None
+
+    # H2H: away moneyline -135
+    assert h2h.outcomes[0].name == 'OKC Thunder'
+    assert h2h.outcomes[0].price.american == -135.0
+
+    # SPREADS: away spread -2.5
+    assert spreads.outcomes[0].name == 'OKC Thunder'
+    assert spreads.outcomes[0].point == -2.5
+
+    # TOTALS: over/under 223.5
+    assert totals.outcomes[0].name == 'Over'
+    assert totals.outcomes[0].point == 223.5
 
 
 def test_scrape_espn_uses_scoreboard_fallback_when_header_api_returns_non_json(monkeypatch):
@@ -185,9 +262,27 @@ def test_scrape_espn_uses_scoreboard_fallback_when_header_api_returns_non_json(m
             return None
 
         def json(self):
+            """
+            Mock ESPN-style JSON payload representing a single event with odds.
+
+            The returned dictionary mimics an ESPN scoreboard/header response containing one event:
+            - events: list of event objects
+              - id (str): event identifier ('401869412')
+              - date (str): ISO-8601 timestamp ('2026-04-30T23:00Z')
+              - competitions: list with a single competition containing:
+                - competitors: two competitors with 'homeAway' set to 'away' and 'home' and nested team.displayName values ('OKC Thunder', 'Boston Celtics')
+                - odds: list containing one provider entry (provider.displayName == 'Draft Kings') with:
+                  - moneyline: numeric american-style odds under away.close.odds (-135) and home.close.odds (120)
+                  - pointSpread: away.close.line present (-2.5)
+                  - total: over.close.line present (223.5)
+
+            Returns:
+                dict: A synthetic ESPN-style payload matching the structure described above.
+            """
             return {
                 'events': [
                     {
+                        'id': '401869412',
                         'date': '2026-04-30T23:00Z',
                         'competitions': [
                             {
@@ -209,10 +304,12 @@ def test_scrape_espn_uses_scoreboard_fallback_when_header_api_returns_non_json(m
                                             'home': {'close': {'odds': 120}},
                                         },
                                         'pointSpread': {
-                                            'away': {'close': {'line': -2.5}},
+                                            'away': {'close': {'line': -2.5, 'odds': -110}},
+                                            'home': {'close': {'line': 2.5, 'odds': -110}},
                                         },
                                         'total': {
-                                            'over': {'close': {'line': 223.5}},
+                                            'over': {'close': {'line': 223.5, 'odds': -110}},
+                                            'under': {'close': {'line': 223.5, 'odds': -110}},
                                         },
                                     }
                                 ],
@@ -226,13 +323,22 @@ def test_scrape_espn_uses_scoreboard_fallback_when_header_api_returns_non_json(m
     responses = iter([HeaderResponse(), ScoreboardResponse()])
     monkeypatch.setattr(scraper._http, 'get', lambda *_args, **_kwargs: next(responses))
 
-    [game] = scraper.scrape_espn_nba_odds()
+    markets = scraper.scrape_espn_nba_odds()
 
-    assert game['matchup'] == 'OKC Thunder @ Boston Celtics'
-    assert game['spread'] == '-2.5'
-    assert game['moneyline'] == '-135'
-    assert game['home_moneyline'] == '+120'
-    assert game['over_under'] == '223.5'
+    # Should produce 3 markets: h2h, spreads, totals
+    assert len(markets) == 3
+
+    h2h = next(m for m in markets if m.market_type == MarketType.H2H)
+    assert h2h.outcomes[0].name == 'OKC Thunder'
+    assert h2h.outcomes[0].price.american == -135
+    assert h2h.outcomes[1].name == 'Boston Celtics'
+    assert h2h.outcomes[1].price.american == 120
+
+    spreads = next(m for m in markets if m.market_type == MarketType.SPREADS)
+    assert spreads.outcomes[0].point == -2.5
+
+    totals = next(m for m in markets if m.market_type == MarketType.TOTALS)
+    assert totals.outcomes[0].point == 223.5
 
 
 def test_parse_espn_header_api_fixture():
@@ -240,39 +346,72 @@ def test_parse_espn_header_api_fixture():
     data = _load_fixture('espn_header_api.json')
     events = data['sports'][0]['leagues'][0]['events']
 
-    games = scraper.parse_header_events(events)
+    markets = scraper.parse_header_events(events)
 
-    assert len(games) == 3
+    # 3 events x 3 market types = 9 markets
+    assert len(markets) == 9
+
+    # Helper to find markets by event_id
+    def find(event_id: str, mtype: MarketType) -> Market:
+        """
+        Finds the Market with the given event identifier and market type.
+
+        Parameters:
+            event_id (str): Identifier of the event to match.
+            mtype (MarketType): Type of market to match.
+
+        Returns:
+            Market: The first Market whose `event_id` equals `event_id` and whose `market_type` equals `mtype`.
+
+        Raises:
+            StopIteration: If no matching Market is found.
+        """
+        return next(m for m in markets if m.event_id == event_id and m.market_type == mtype)
 
     # DET @ ORL -- away (DET) favored by 3.5
-    det_orl = games[0]
-    assert det_orl['matchup'] == 'Detroit Pistons @ Orlando Magic'
-    assert det_orl['spread'] == '-3.5'
-    assert det_orl['moneyline'] == '-162'
-    assert det_orl['home_moneyline'] == '+136'
-    assert det_orl['over_under'] == '210.5'
+    det_orl_h2h = find('401869417', MarketType.H2H)
+    assert det_orl_h2h.outcomes[0].name == 'Detroit Pistons'
+    assert det_orl_h2h.outcomes[0].price.american == -162
+    assert det_orl_h2h.outcomes[1].name == 'Orlando Magic'
+    assert det_orl_h2h.outcomes[1].price.american == 136
+
+    det_orl_spread = find('401869417', MarketType.SPREADS)
+    assert det_orl_spread.outcomes[0].point == -3.5  # away spread
+    assert det_orl_spread.outcomes[1].point == 3.5  # home spread
+
+    det_orl_totals = find('401869417', MarketType.TOTALS)
+    assert det_orl_totals.outcomes[0].point == 210.5
 
     # CLE @ TOR -- away (CLE) favored by 4.5
-    cle_tor = games[1]
-    assert cle_tor['matchup'] == 'Cleveland Cavaliers @ Toronto Raptors'
-    assert cle_tor['spread'] == '-4.5'
-    assert cle_tor['moneyline'] == '-198'
-    assert cle_tor['home_moneyline'] == '+164'
-    assert cle_tor['over_under'] == '218.5'
+    cle_tor_h2h = find('401869381', MarketType.H2H)
+    assert cle_tor_h2h.outcomes[0].name == 'Cleveland Cavaliers'
+    assert cle_tor_h2h.outcomes[0].price.american == -198
+    assert cle_tor_h2h.outcomes[1].name == 'Toronto Raptors'
+    assert cle_tor_h2h.outcomes[1].price.american == 164
+
+    cle_tor_spread = find('401869381', MarketType.SPREADS)
+    assert cle_tor_spread.outcomes[0].point == -4.5
+
+    cle_tor_totals = find('401869381', MarketType.TOTALS)
+    assert cle_tor_totals.outcomes[0].point == 218.5
 
     # LAL @ HOU -- home (HOU) favored by 5.5, so away is +5.5
-    lal_hou = games[2]
-    assert lal_hou['matchup'] == 'Los Angeles Lakers @ Houston Rockets'
-    assert lal_hou['spread'] == '+5.5'
-    assert lal_hou['moneyline'] == '+160'
-    assert lal_hou['home_moneyline'] == '-192'
-    assert lal_hou['over_under'] == '203.5'
+    lal_hou_h2h = find('401869409', MarketType.H2H)
+    assert lal_hou_h2h.outcomes[0].name == 'Los Angeles Lakers'
+    assert lal_hou_h2h.outcomes[0].price.american == 160
+    assert lal_hou_h2h.outcomes[1].name == 'Houston Rockets'
+    assert lal_hou_h2h.outcomes[1].price.american == -192
 
-    for game in games:
-        assert game['source'] == 'ESPN'
-        assert game['date']
-        assert game['home_team']
-        assert game['away_team']
+    lal_hou_spread = find('401869409', MarketType.SPREADS)
+    assert lal_hou_spread.outcomes[0].point == 5.5  # away +5.5
+
+    lal_hou_totals = find('401869409', MarketType.TOTALS)
+    assert lal_hou_totals.outcomes[0].point == 203.5
+
+    # All markets share common attributes
+    for market in markets:
+        assert market.sport == 'nba'
+        assert market.event_id
 
 
 def test_parse_espn_scoreboard_api_fixture():
@@ -280,19 +419,38 @@ def test_parse_espn_scoreboard_api_fixture():
     data = _load_fixture('espn_scoreboard_api.json')
     events = data.get('events', [])
 
-    games = scraper.parse_scoreboard_events(events)
+    markets = scraper.parse_scoreboard_events(events)
 
-    assert len(games) == 1
+    # 1 event x 3 market types = 3 markets
+    assert len(markets) == 3
 
-    game = games[0]
-    assert game['matchup'] == 'Philadelphia 76ers @ Boston Celtics'
-    assert game['spread'] == '+7.5'
-    assert game['over_under'] == '205.5'
-    assert game['moneyline'] != 'N/A'
-    assert game['home_moneyline'] != 'N/A'
-    assert game['source'] == 'ESPN'
-    assert game['away_team'] == 'Philadelphia 76ers'
-    assert game['home_team'] == 'Boston Celtics'
+    def find(mtype: MarketType) -> Market:
+        """
+        Select the first market from the surrounding `markets` collection matching the given market type.
+
+        Parameters:
+            mtype (MarketType): The market type to find.
+
+        Returns:
+            Market: The first Market whose `market_type` equals `mtype`.
+
+        Raises:
+            StopIteration: If no matching market is found.
+        """
+        return next(m for m in markets if m.market_type == mtype)
+
+    h2h = find(MarketType.H2H)
+    assert h2h.outcomes[0].name == 'Philadelphia 76ers'
+    assert h2h.outcomes[1].name == 'Boston Celtics'
+    assert h2h.outcomes[0].price.american == 215
+    assert h2h.outcomes[1].price.american == -265
+
+    spreads = find(MarketType.SPREADS)
+    assert spreads.outcomes[0].point == 7.5  # away spread +7.5
+    assert spreads.outcomes[1].point == -7.5
+
+    totals = find(MarketType.TOTALS)
+    assert totals.outcomes[0].point == 205.5
 
 
 def test_draftkings_fixture_no_odds_table_fails_gracefully():
@@ -339,14 +497,10 @@ def test_scrape_espn_nba_odds_returns_empty_when_header_api_has_no_games(
 
     def return_empty_sports(*_args, **_kwargs):
         """
-        Produce a fake HTTP JSON response containing an empty `sports` list for tests.
-
-        Parameters:
-            *_args: Ignored.
-            **_kwargs: Ignored.
+        Produce a fake HTTP JSON response for tests with an empty 'sports' list.
 
         Returns:
-            _JsonResponse: A response whose JSON payload is {'sports': []}.
+            _JsonResponse: Response whose JSON payload is {'sports': []}.
         """
         return _JsonResponse({'sports': []})
 
@@ -510,6 +664,16 @@ def test_parse_draftkings_cb_market_structure():
         FakeElement(text='-110', attrs={'data-testid': 'button-odds-market-board'}),
     ]
 
+    under_button = FakeElement(
+        text='U 205.5',
+        attrs={'data-testid': 'component-builder-market-button-34077039-0OU84578437U20550_2'},
+    )
+    under_button._children = [
+        FakeElement(text='U', attrs={'data-testid': 'button-title-market-board'}),
+        FakeElement(text='205.5', attrs={'data-testid': 'button-points-market-board'}),
+        FakeElement(text='-110', attrs={'data-testid': 'button-odds-market-board'}),
+    ]
+
     away_moneyline_button = FakeElement(
         text='+215', attrs={'data-testid': 'component-builder-market-button-34077039-0ML84578437_1'}
     )
@@ -539,24 +703,35 @@ def test_parse_draftkings_cb_market_structure():
             away_spread_button,
             home_spread_button,
             over_button,
+            under_button,
             away_moneyline_button,
             home_moneyline_button,
         ],
     )
 
     page = FakePage(elements=[game_template])
-    games = DraftKingsScraper().parse_cb_market(page)
+    markets = DraftKingsScraper().parse_cb_market(page)
 
-    assert len(games) == 1
-    game = games[0]
-    assert game['away_team'] == 'PHI 76ers'
-    assert game['home_team'] == 'BOS Celtics'
-    assert game['matchup'] == 'PHI 76ers @ BOS Celtics'
-    assert game['spread'] == '+7.5'
-    assert game['moneyline'] == '+215'
-    assert game['home_moneyline'] == '-265'
-    assert game['over_under'] == '205.5'
-    assert game['source'] == 'DraftKings'
+    # Should produce 3 markets: H2H, SPREADS, TOTALS
+    assert len(markets) == 3
+
+    h2h = next(m for m in markets if m.market_type == MarketType.H2H)
+    spreads = next(m for m in markets if m.market_type == MarketType.SPREADS)
+    totals = next(m for m in markets if m.market_type == MarketType.TOTALS)
+
+    # H2H: PHI 76ers +215, BOS Celtics -265
+    assert h2h.outcomes[0].name == 'PHI 76ers'
+    assert h2h.outcomes[0].price.american == 215.0
+    assert h2h.outcomes[1].name == 'BOS Celtics'
+    assert h2h.outcomes[1].price.american == -265.0
+
+    # SPREADS: away +7.5
+    assert spreads.outcomes[0].name == 'PHI 76ers'
+    assert spreads.outcomes[0].point == 7.5
+
+    # TOTALS: 205.5
+    assert totals.outcomes[0].name == 'Over'
+    assert totals.outcomes[0].point == 205.5
 
 
 def test_parse_draftkings_games_prefers_cb_market():
@@ -591,11 +766,13 @@ def test_parse_draftkings_games_prefers_cb_market():
     )
 
     page = FakePage(elements=[game_template])
-    games = DraftKingsScraper().parse_games(page)
+    markets = DraftKingsScraper().parse_games(page)
 
-    assert len(games) == 1
-    assert games[0]['away_team'] == 'PHI 76ers'
-    assert games[0]['home_team'] == 'BOS Celtics'
+    # Only moneyline buttons provided — should produce H2H market only
+    assert len(markets) >= 1
+    h2h = next(m for m in markets if m.market_type == MarketType.H2H)
+    assert h2h.outcomes[0].name == 'PHI 76ers'
+    assert h2h.outcomes[1].name == 'BOS Celtics'
 
 
 def test_parse_draftkings_cb_market_skips_incomplete_games():
@@ -627,9 +804,20 @@ def test_parse_draftkings_cb_market_multiple_games():
     away_moneyline_button_1._children = [
         FakeElement(text='+215', attrs={'data-testid': 'button-odds-market-board'}),
     ]
+    home_moneyline_button_1 = FakeElement(
+        text='-265', attrs={'data-testid': 'component-builder-market-button-game1-0ML_3'}
+    )
+    home_moneyline_button_1._children = [
+        FakeElement(text='-265', attrs={'data-testid': 'button-odds-market-board'}),
+    ]
     template1 = FakeElement(
         attrs={'class': 'cb-market__template--2-columns'},
-        children=[away_team_element_1, home_team_element_1, away_moneyline_button_1],
+        children=[
+            away_team_element_1,
+            home_team_element_1,
+            away_moneyline_button_1,
+            home_moneyline_button_1,
+        ],
     )
 
     away_team_element_2 = FakeElement(
@@ -644,17 +832,34 @@ def test_parse_draftkings_cb_market_multiple_games():
     away_moneyline_button_2._children = [
         FakeElement(text='+280', attrs={'data-testid': 'button-odds-market-board'}),
     ]
+    home_moneyline_button_2 = FakeElement(
+        text='-350', attrs={'data-testid': 'component-builder-market-button-game2-0ML_3'}
+    )
+    home_moneyline_button_2._children = [
+        FakeElement(text='-350', attrs={'data-testid': 'button-odds-market-board'}),
+    ]
     template2 = FakeElement(
         attrs={'class': 'cb-market__template--2-columns'},
-        children=[away_team_element_2, home_team_element_2, away_moneyline_button_2],
+        children=[
+            away_team_element_2,
+            home_team_element_2,
+            away_moneyline_button_2,
+            home_moneyline_button_2,
+        ],
     )
 
     page = FakePage(elements=[template1, template2])
-    games = DraftKingsScraper().parse_cb_market(page)
+    markets = DraftKingsScraper().parse_cb_market(page)
 
-    assert len(games) == 2
-    assert games[0]['matchup'] == 'PHI 76ers @ BOS Celtics'
-    assert games[1]['matchup'] == 'ORL Magic @ DET Pistons'
+    # Each game produces 1 H2H market (moneyline for both sides, no spread/total)
+    assert len(markets) == 2
+    # Check teams via H2H outcomes
+    game1_h2h = markets[0]
+    assert game1_h2h.market_type == MarketType.H2H
+    assert game1_h2h.outcomes[0].name == 'PHI 76ers'
+    game2_h2h = markets[1]
+    assert game2_h2h.market_type == MarketType.H2H
+    assert game2_h2h.outcomes[0].name == 'ORL Magic'
 
 
 # ============ futures champion tests ============

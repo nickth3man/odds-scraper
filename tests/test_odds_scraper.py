@@ -3,18 +3,8 @@
 import tempfile
 from pathlib import Path
 
+from backend.models.domain import Market, MarketType
 from backend.scrapers import OddsScraper
-
-_REQUIRED_KEYS = {
-    'game_id',
-    'date',
-    'team',
-    'opponent',
-    'moneyline',
-    'spread',
-    'over_under',
-    'sportsbook',
-}
 
 
 class TestOddsScraper:
@@ -42,62 +32,91 @@ class TestOddsScraper:
         result = scraper.load_config('nonexistent_file.json')
         assert result == {}
 
-    def test_scrape_espn_odds_returns_list(self):
+    def test_scrape_espn_odds_returns_markets(self):
         scraper = OddsScraper()
-        odds = scraper.scrape_espn_odds()
-        assert isinstance(odds, list)
-        assert len(odds) == 4
+        markets = scraper.scrape_espn_odds()
+        assert isinstance(markets, list)
+        assert all(isinstance(m, Market) for m in markets)
+        # 2 games x 3 market types (h2h, spreads, totals) = 6
+        assert len(markets) == 6
 
-    def test_scrape_espn_odds_has_required_keys(self):
+    def test_scrape_espn_odds_has_required_market_types(self):
         scraper = OddsScraper()
-        for game in scraper.scrape_espn_odds():
-            assert _REQUIRED_KEYS.issubset(game.keys())
+        markets = scraper.scrape_espn_odds()
+        types = {m.market_type for m in markets}
+        assert MarketType.H2H in types
+        assert MarketType.SPREADS in types
+        assert MarketType.TOTALS in types
 
-    def test_scrape_espn_odds_source_is_espn(self):
+    def test_scrape_espn_odds_keys_start_with_espn(self):
         scraper = OddsScraper()
-        for game in scraper.scrape_espn_odds():
-            assert game['sportsbook'] == 'ESPN'
+        for market in scraper.scrape_espn_odds():
+            assert market.key.startswith('espn_')
 
-    def test_scrape_draftkings_odds_returns_list(self):
-        scraper = OddsScraper()
-        odds = scraper.scrape_draftkings_odds()
-        assert isinstance(odds, list)
-        assert len(odds) == 4
+    def test_scrape_draftkings_odds_returns_markets(self):
+        """
+        Verifies that scrape_draftkings_odds returns a list containing six Market objects.
 
-    def test_scrape_draftkings_odds_source_is_draftkings(self):
+        Asserts the result is a list, every element is an instance of Market, and the list length is 6.
+        """
         scraper = OddsScraper()
-        for game in scraper.scrape_draftkings_odds():
-            assert game['sportsbook'] == 'DraftKings'
+        markets = scraper.scrape_draftkings_odds()
+        assert isinstance(markets, list)
+        assert all(isinstance(m, Market) for m in markets)
+        assert len(markets) == 6
 
-    def test_scrape_fanduel_odds_returns_list(self):
+    def test_scrape_draftkings_odds_keys_start_with_draftkings(self):
         scraper = OddsScraper()
-        odds = scraper.scrape_fanduel_odds()
-        assert isinstance(odds, list)
-        assert len(odds) == 4
+        for market in scraper.scrape_draftkings_odds():
+            assert market.key.startswith('draftkings_')
 
-    def test_scrape_fanduel_odds_source_is_fanduel(self):
+    def test_scrape_fanduel_odds_returns_markets(self):
         scraper = OddsScraper()
-        for game in scraper.scrape_fanduel_odds():
-            assert game['sportsbook'] == 'FanDuel'
+        markets = scraper.scrape_fanduel_odds()
+        assert isinstance(markets, list)
+        assert all(isinstance(m, Market) for m in markets)
+        assert len(markets) == 6
 
-    def test_all_odds_are_integers_or_floats(self):
-        """Moneyline, spread, over_under should be numeric."""
+    def test_scrape_fanduel_odds_keys_start_with_fanduel(self):
+        """
+        Asserts that every Market returned by scrape_fanduel_odds has a key starting with 'fanduel_'.
+
+        This verifies that FanDuel-derived markets are correctly namespaced by prefixing their `key` with 'fanduel_'.
+        """
         scraper = OddsScraper()
-        for odds_list in [
+        for market in scraper.scrape_fanduel_odds():
+            assert market.key.startswith('fanduel_')
+
+    def test_markets_have_valid_outcomes(self):
+        """
+        Verify that markets from each sportsbook contain exactly two outcomes and that each outcome's NormalizedOdds are valid.
+
+        Checks performed:
+        - Each market has exactly two outcomes.
+        - Each outcome has a truthy `name`.
+        - `price.american` is not zero.
+        - `price.decimal` is greater than 1.0.
+        - `price.implied_probability` is greater than 0 and less than 1.0.
+        """
+        scraper = OddsScraper()
+        for markets in [
             scraper.scrape_espn_odds(),
             scraper.scrape_draftkings_odds(),
             scraper.scrape_fanduel_odds(),
         ]:
-            for game in odds_list:
-                assert isinstance(game['moneyline'], int)
-                assert isinstance(game['spread'], (int, float))
-                assert isinstance(game['over_under'], (int, float))
+            for market in markets:
+                assert len(market.outcomes) == 2
+                for outcome in market.outcomes:
+                    assert outcome.name
+                    assert outcome.price.american != 0
+                    assert outcome.price.decimal > 1.0
+                    assert 0 < outcome.price.implied_probability < 1.0
 
     def test_get_all_odds_respects_config(self):
-        """When all sportsbooks are enabled, 12 games are returned (4 per sportsbook)."""
+        """When all sportsbooks are enabled, 18 markets are returned (6 per sportsbook)."""
         scraper = OddsScraper()
-        odds = scraper.get_all_odds()
-        assert len(odds) == 12
+        markets = scraper.get_all_odds()
+        assert len(markets) == 18
 
     def test_get_all_odds_with_disabled_books(self):
         """Test that disabled books are skipped."""
@@ -109,10 +128,10 @@ class TestOddsScraper:
                 'fanduel': {'enabled': False},
             }
         }
-        odds = scraper.get_all_odds()
-        assert len(odds) == 4
-        for game in odds:
-            assert game['sportsbook'] == 'DraftKings'
+        markets = scraper.get_all_odds()
+        assert len(markets) == 6
+        for market in markets:
+            assert market.key.startswith('draftkings_')
 
     def test_export_to_csv_writes_file(self):
         """Export creates a CSV file in the temp directory."""
@@ -125,7 +144,7 @@ class TestOddsScraper:
             assert filepath.exists()
             content = filepath.read_text()
             assert 'OKC Thunder' in content
-            assert 'moneyline' in content
+            assert 'market_type' in content
 
     def test_export_to_csv_no_data_does_nothing(self):
         """Export with no scraped data prints a message but doesn't crash."""
@@ -137,3 +156,10 @@ class TestOddsScraper:
         scraper = OddsScraper()
         assert scraper.timestamp
         assert ':' in scraper.timestamp  # datetime format
+
+    def test_scrape_base_method_returns_all_odds(self):
+        """BaseScraper.scrape() delegates to get_all_odds."""
+        scraper = OddsScraper()
+        markets = scraper.scrape()
+        assert len(markets) == 18
+        assert all(isinstance(m, Market) for m in markets)

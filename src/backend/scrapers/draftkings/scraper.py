@@ -189,16 +189,18 @@ from __future__ import annotations
 # ==============================================================================
 import re
 from dataclasses import dataclass
-from datetime import datetime
 from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
 
 from loguru import logger
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 from playwright_stealth import Stealth
 
+from ...models.domain import Market, MarketType, NormalizedOdds, Outcome
 from ..shared.parsers import (
-    GameOdds,
     extract_first_american_odds,
     extract_first_signed_number,
     extract_first_total,
@@ -241,6 +243,35 @@ USER_AGENT = (
     'AppleWebKit/537.36 (KHTML, like Gecko) '
     'Chrome/124.0.0.0 Safari/537.36'
 )
+
+
+def _parse_american(raw: str) -> float | None:
+    """
+    Parse an American-style odds string into a numeric value.
+
+    Accepts strings like "+150" or "-110" and attempts to normalize them; returns None for empty input, the literal "N/A", or when no parsable odds can be extracted.
+
+    Returns:
+        float | None: The parsed odds as a float (e.g., '+150' -> 150.0, '-110' -> -110.0), or `None` if parsing failed.
+    """
+    cleaned = raw.strip()
+    if not cleaned or cleaned == 'N/A':
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        extracted = extract_first_american_odds(cleaned)
+        return float(extracted) if extracted else None
+
+
+def _draftkings_event_id_from_text(value: str) -> str | None:
+    match = re.search(r'market-button-(\d+)-', value)
+    return match.group(1) if match else None
+
+
+def _fallback_event_id(away_team: str, home_team: str) -> str:
+    matchup = f'{away_team}-{home_team}'.lower()
+    return re.sub(r'[^a-z0-9]+', '-', matchup).strip('-')
 
 
 @dataclass(frozen=True)
@@ -297,10 +328,9 @@ class DraftKingsScraper:
     @staticmethod
     def _cleanup(session: _BrowserSession | None) -> None:
         """
-        Close the Playwright page, context, and browser for the given session, then stop the Playwright driver.
+        Close and release Playwright resources associated with the session and stop the Playwright driver.
 
-        If `session` is `None` this is a no-op. Failures while closing individual resources are logged as warnings; the Playwright driver is stopped after attempting to close resources.
-
+        If `session` is `None`, this function does nothing. It attempts to close the page, context, and browser in that order; failures closing individual resources are logged as warnings. After attempting to close resources, the Playwright driver is stopped.
         Parameters:
             session (_BrowserSession | None): Playwright resources to clean up.
         """
@@ -318,12 +348,13 @@ class DraftKingsScraper:
         session.playwright.stop()
 
     @logger.catch
-    def scrape_odds(self) -> list[GameOdds]:
+    def scrape_odds(self) -> list[Market]:
         """
-        Fetch current NBA game odds from DraftKings and parse them into GameOdds entries.
+        Fetch current NBA game odds from DraftKings and parse them into Market objects.
 
         Returns:
-            list[GameOdds]: A list of parsed GameOdds objects for each found game, or an empty list if no games were found or if an error/timeout occurred.
+            list[Market]: A list of Market objects (H2H, SPREADS, TOTALS) for each found game,
+            or an empty list if no games were found or if an error/timeout occurred.
         """
         logger.info('Fetching live odds', source='DraftKings', action='fetch')
 
@@ -427,40 +458,200 @@ class DraftKingsScraper:
         finally:
             self._cleanup(session)
 
-    def parse_games(self, page) -> list[GameOdds]:
-        """Parse games from DraftKings page using Playwright.
+    def parse_games(self, page: Page) -> list[Market]:
+        """
+        Parse a DraftKings page and produce a list of Market objects representing the scraped games.
 
-        When parsel is available, HTML is extracted once from the page and
-        parsed with CSS selectors — no repeated element queries.
-        The Playwright paths remain as a fallback.
+        Prefers a single-pass HTML parse using `parsel` when available, falling back to the component-builder (`parse_cb_market`) layout parser and then to the legacy event-cell parser (`parse_event_cells`) if needed.
+
+        Parameters:
+            page: Playwright Page instance to parse.
+
+        Returns:
+            markets (list[Market]): List of parsed Market objects; empty list if no games were found.
         """
         if _PARSEL_AVAILABLE and _HtmlSelector is not None:
             html = page.content()
-            games = self.parse_html(html)
-            if games:
-                return games
+            markets = self.parse_html(html)
+            if markets:
+                return markets
 
         # Try new cb-market structure first (component-builder layout)
-        games = self.parse_cb_market(page)
-        if games:
-            return games
+        markets = self.parse_cb_market(page)
+        if markets:
+            return markets
 
         # Fallback to old event-cell structure
         return self.parse_event_cells(page)
 
     @staticmethod
-    def parse_html(html: str) -> list[GameOdds]:
-        """Parse DraftKings NBA page HTML using parsel CSS selectors.
+    def _build_markets(
+        away_team: str,
+        home_team: str,
+        event_id: str | None,
+        away_spread_raw: str,
+        away_spread_odds_raw: str,
+        home_spread_raw: str,
+        home_spread_odds_raw: str,
+        away_moneyline_raw: str,
+        home_moneyline_raw: str,
+        over_total_raw: str,
+        over_odds_raw: str,
+        under_total_raw: str,
+        under_odds_raw: str,
+    ) -> list[Market]:
+        """
+        Constructs Market objects (moneyline, spread, and total) for a single game from raw parsed fields.
 
-        Accepts raw HTML string (e.g. from page.content()) and returns
-        a list of game dicts with the same schema as the Playwright paths.
-        Returns an empty list when parsel is not installed.
+        Parses the provided raw strings and builds zero or more Market instances:
+        - Moneyline (H2H): includes an outcome for each side with a parsable American odd.
+        - Spread: includes away and home outcomes with point values if a spread can be parsed.
+        - Total: includes Over and Under outcomes with the parsed total points if available.
+
+        Parameters:
+            away_team (str): Away team name.
+            home_team (str): Home team name.
+            away_spread_raw (str): Raw away spread text (signed number or other text); may be 'N/A' or unparsable.
+            away_moneyline_raw (str): Raw away moneyline/american odds text; may be 'N/A' or unparsable.
+            home_moneyline_raw (str): Raw home moneyline/american odds text; may be 'N/A' or unparsable.
+            over_total_raw (str): Raw over/total points text; may be 'N/A' or unparsable.
+
+        Returns:
+            list[Market]: A list of Market objects for the game. Markets are omitted when their corresponding raw input cannot be parsed; moneyline outcomes are included only for sides with parsable odds.
+        """
+        markets: list[Market] = []
+        resolved_event_id = event_id or _fallback_event_id(away_team, home_team)
+
+        # H2H (moneyline) market
+        away_ml = _parse_american(away_moneyline_raw)
+        home_ml = _parse_american(home_moneyline_raw)
+        if away_ml is not None and home_ml is not None:
+            outcomes = [
+                Outcome(name=away_team, price=NormalizedOdds.from_american(away_ml)),
+                Outcome(name=home_team, price=NormalizedOdds.from_american(home_ml)),
+            ]
+            markets.append(
+                Market(
+                    key=f'draftkings_h2h_{resolved_event_id}',
+                    name='Moneyline',
+                    sport='nba',
+                    event_id=resolved_event_id,
+                    market_type=MarketType.H2H,
+                    outcomes=outcomes,
+                )
+            )
+
+        # SPREADS market
+        away_spread_val = None
+        if away_spread_raw and away_spread_raw != 'N/A':
+            try:
+                away_spread_val = float(away_spread_raw)
+            except ValueError:
+                signed = extract_first_signed_number(away_spread_raw)
+                if signed:
+                    away_spread_val = float(signed)
+        home_spread_val = None
+        if home_spread_raw and home_spread_raw != 'N/A':
+            try:
+                home_spread_val = float(home_spread_raw)
+            except ValueError:
+                signed = extract_first_signed_number(home_spread_raw)
+                if signed:
+                    home_spread_val = float(signed)
+        away_spread_odds = _parse_american(away_spread_odds_raw)
+        home_spread_odds = _parse_american(home_spread_odds_raw)
+        if (
+            away_spread_val is not None
+            and home_spread_val is not None
+            and away_spread_odds is not None
+            and home_spread_odds is not None
+        ):
+            spread_outcomes = [
+                Outcome(
+                    name=away_team,
+                    price=NormalizedOdds.from_american(away_spread_odds),
+                    point=away_spread_val,
+                ),
+                Outcome(
+                    name=home_team,
+                    price=NormalizedOdds.from_american(home_spread_odds),
+                    point=home_spread_val,
+                ),
+            ]
+            markets.append(
+                Market(
+                    key=f'draftkings_spread_{resolved_event_id}',
+                    name='Spread',
+                    sport='nba',
+                    event_id=resolved_event_id,
+                    market_type=MarketType.SPREADS,
+                    outcomes=spread_outcomes,
+                )
+            )
+
+        # TOTALS market
+        total_val = None
+        if over_total_raw and over_total_raw != 'N/A':
+            try:
+                total_val = float(over_total_raw)
+            except ValueError:
+                extracted = extract_first_total(over_total_raw)
+                if extracted:
+                    total_val = float(extracted)
+        under_total_val = None
+        if under_total_raw and under_total_raw != 'N/A':
+            try:
+                under_total_val = float(under_total_raw)
+            except ValueError:
+                extracted = extract_first_total(under_total_raw)
+                if extracted:
+                    under_total_val = float(extracted)
+        over_odds = _parse_american(over_odds_raw)
+        under_odds = _parse_american(under_odds_raw)
+        if total_val is not None and under_total_val is not None and over_odds and under_odds:
+            totals_outcomes = [
+                Outcome(
+                    name='Over',
+                    price=NormalizedOdds.from_american(over_odds),
+                    point=total_val,
+                ),
+                Outcome(
+                    name='Under',
+                    price=NormalizedOdds.from_american(under_odds),
+                    point=under_total_val,
+                ),
+            ]
+            markets.append(
+                Market(
+                    key=f'draftkings_total_{resolved_event_id}',
+                    name='Total',
+                    sport='nba',
+                    event_id=resolved_event_id,
+                    market_type=MarketType.TOTALS,
+                    outcomes=totals_outcomes,
+                )
+            )
+
+        return markets
+
+    @staticmethod
+    def parse_html(html: str) -> list[Market]:
+        """
+        Extract DraftKings NBA markets from a page HTML string into Market objects.
+
+        Parses the provided full page HTML (as returned by page.content()) and returns a list of Market instances representing parsed moneyline (H2H), spread, and total markets for each detected game. Templates that cannot be parsed are silently skipped. If the `parsel` library is not available, this function returns an empty list.
+
+        Parameters:
+            html (str): Full HTML of a DraftKings NBA page.
+
+        Returns:
+            list[Market]: A list of Market objects for parsed games; empty if none found or if `parsel` is unavailable.
         """
         if not _PARSEL_AVAILABLE or _HtmlSelector is None:
             return []
 
         selector = _HtmlSelector(text=html)
-        games = []
+        markets: list[Market] = []
 
         for template in selector.css(TEMPLATE_SELECTOR):
             try:
@@ -478,7 +669,28 @@ class DraftKingsScraper:
                         or 'N/A'
                     ).strip() or 'N/A'
 
-                away_spread = get_button_text(template, '0HC', BUTTON_POINTS_DATA_TESTID)
+                event_id = _draftkings_event_id_from_text(
+                    template.css("button[data-testid*='market-button']::attr(data-testid)").get()
+                    or ''
+                )
+                spread_points = [
+                    value.strip()
+                    for value in template.css(
+                        f"button[data-testid*='0HC'] [data-testid='{BUTTON_POINTS_DATA_TESTID}']::text"
+                    ).getall()
+                    if value and value.strip()
+                ]
+                spread_odds = [
+                    value.strip()
+                    for value in template.css(
+                        f"button[data-testid*='0HC'] [data-testid='{BUTTON_ODDS_DATA_TESTID}']::text"
+                    ).getall()
+                    if value and value.strip()
+                ]
+                away_spread = spread_points[0] if spread_points else 'N/A'
+                home_spread = spread_points[1] if len(spread_points) > 1 else 'N/A'
+                away_spread_odds = spread_odds[0] if spread_odds else 'N/A'
+                home_spread_odds = spread_odds[1] if len(spread_odds) > 1 else 'N/A'
                 moneyline_values = [
                     value.strip()
                     for value in template.css(
@@ -488,31 +700,74 @@ class DraftKingsScraper:
                 ]
                 away_moneyline = moneyline_values[0] if moneyline_values else 'N/A'
                 home_moneyline = moneyline_values[1] if len(moneyline_values) > 1 else 'N/A'
-                over_under_title = get_button_text(template, '0OU', BUTTON_TITLE_DATA_TESTID)
-                over_under_points = get_button_text(template, '0OU', BUTTON_POINTS_DATA_TESTID)
-                over_total = over_under_points if over_under_title.upper() == 'O' else 'N/A'
+                total_titles = [
+                    value.strip().upper()
+                    for value in template.css(
+                        f"button[data-testid*='0OU'] [data-testid='{BUTTON_TITLE_DATA_TESTID}']::text"
+                    ).getall()
+                    if value and value.strip()
+                ]
+                total_points = [
+                    value.strip()
+                    for value in template.css(
+                        f"button[data-testid*='0OU'] [data-testid='{BUTTON_POINTS_DATA_TESTID}']::text"
+                    ).getall()
+                    if value and value.strip()
+                ]
+                total_odds = [
+                    value.strip()
+                    for value in template.css(
+                        f"button[data-testid*='0OU'] [data-testid='{BUTTON_ODDS_DATA_TESTID}']::text"
+                    ).getall()
+                    if value and value.strip()
+                ]
+                over_total = 'N/A'
+                over_odds = 'N/A'
+                under_total = 'N/A'
+                under_odds = 'N/A'
+                for index, title in enumerate(total_titles):
+                    if title == 'O' and index < len(total_points):
+                        over_total = total_points[index]
+                        over_odds = total_odds[index] if index < len(total_odds) else 'N/A'
+                    elif title == 'U' and index < len(total_points):
+                        under_total = total_points[index]
+                        under_odds = total_odds[index] if index < len(total_odds) else 'N/A'
 
-                games.append(
-                    {
-                        'date': datetime.now().strftime('%Y-%m-%d'),
-                        'home_team': home_team,
-                        'away_team': away_team,
-                        'matchup': f'{away_team} @ {home_team}',
-                        'spread': away_spread,
-                        'moneyline': away_moneyline,
-                        'home_moneyline': home_moneyline,
-                        'over_under': over_total,
-                        'source': 'DraftKings',
-                    }
+                markets.extend(
+                    DraftKingsScraper._build_markets(
+                        away_team,
+                        home_team,
+                        event_id,
+                        away_spread,
+                        away_spread_odds,
+                        home_spread,
+                        home_spread_odds,
+                        away_moneyline,
+                        home_moneyline,
+                        over_total,
+                        over_odds,
+                        under_total,
+                        under_odds,
+                    )
                 )
             except (AttributeError, ValueError, IndexError):
                 continue
 
-        return games
+        return markets
 
-    def parse_cb_market(self, page) -> list[GameOdds]:
-        """Parse DraftKings games using cb-market__template structure."""
-        games = []
+    def parse_cb_market(self, page: Page) -> list[Market]:
+        """
+        Parse DraftKings game templates rendered with the `cb-market__template` layout into Market objects.
+
+        Iterates each market template on the provided Playwright page, extracts away/home team names and the first available spread, moneyline, and over total values from market buttons, and converts each game into one or more Market entries via the scraper's internal market builder.
+
+        Parameters:
+            page (playwright.sync_api.Page): Playwright page positioned on a DraftKings listings page containing `cb-market__template` elements.
+
+        Returns:
+            list[Market]: A list of parsed Market objects for all successfully read games; returns an empty list when no templates are found or parsing fails.
+        """
+        markets: list[Market] = []
 
         try:
             # Find game templates — DraftKings uses both 2-column and 4-column layouts
@@ -539,13 +794,21 @@ class DraftKingsScraper:
                     buttons = template.query_selector_all(MARKET_BUTTON_SELECTOR)
 
                     away_spread = 'N/A'
+                    away_spread_odds = 'N/A'
+                    home_spread = 'N/A'
+                    home_spread_odds = 'N/A'
                     away_moneyline = 'N/A'
                     home_moneyline = 'N/A'
                     over_total = 'N/A'
+                    over_odds = 'N/A'
+                    under_total = 'N/A'
+                    under_odds = 'N/A'
+                    event_id: str | None = None
 
                     for button in buttons:
                         try:
                             testid = button.get_attribute('data-testid') or ''
+                            event_id = event_id or _draftkings_event_id_from_text(testid)
 
                             if '0HC' in testid:
                                 points_element = button.query_selector(
@@ -554,8 +817,16 @@ class DraftKingsScraper:
                                 points = (
                                     points_element.inner_text().strip() if points_element else ''
                                 )
+                                odds_element = button.query_selector(
+                                    f"[data-testid='{BUTTON_ODDS_DATA_TESTID}']"
+                                )
+                                odds = odds_element.inner_text().strip() if odds_element else ''
                                 if away_spread == 'N/A':
                                     away_spread = points
+                                    away_spread_odds = odds
+                                elif home_spread == 'N/A':
+                                    home_spread = points
+                                    home_spread_odds = odds
                             elif '0OU' in testid:
                                 title_element = button.query_selector(
                                     f"[data-testid='{BUTTON_TITLE_DATA_TESTID}']"
@@ -567,8 +838,16 @@ class DraftKingsScraper:
                                 points = (
                                     points_element.inner_text().strip() if points_element else ''
                                 )
+                                odds_element = button.query_selector(
+                                    f"[data-testid='{BUTTON_ODDS_DATA_TESTID}']"
+                                )
+                                odds = odds_element.inner_text().strip() if odds_element else ''
                                 if over_total == 'N/A' and title.upper() == 'O':
                                     over_total = points
+                                    over_odds = odds
+                                elif under_total == 'N/A' and title.upper() == 'U':
+                                    under_total = points
+                                    under_odds = odds
                             elif '0ML' in testid:
                                 odds_element = button.query_selector(
                                     f"[data-testid='{BUTTON_ODDS_DATA_TESTID}']"
@@ -582,33 +861,44 @@ class DraftKingsScraper:
                         except (AttributeError, ValueError):
                             continue
 
-                    games.append(
-                        {
-                            'date': datetime.now().strftime('%Y-%m-%d'),
-                            'home_team': home_team,
-                            'away_team': away_team,
-                            'matchup': f'{away_team} @ {home_team}',
-                            'spread': away_spread,
-                            'moneyline': away_moneyline,
-                            'home_moneyline': home_moneyline,
-                            'over_under': over_total,
-                            'source': 'DraftKings',
-                        }
+                    markets.extend(
+                        self._build_markets(
+                            away_team,
+                            home_team,
+                            event_id,
+                            away_spread,
+                            away_spread_odds,
+                            home_spread,
+                            home_spread_odds,
+                            away_moneyline,
+                            home_moneyline,
+                            over_total,
+                            over_odds,
+                            under_total,
+                            under_odds,
+                        )
                     )
 
                 except Exception as error:
                     logger.warning('Failed to parse DraftKings cb-market game: {}', error)
                     continue
 
-            return games
+            return markets
 
         except Exception as error:
             logger.warning('Error parsing DraftKings cb-market structure: {}', error)
             return []
 
-    def parse_event_cells(self, page) -> list[GameOdds]:
-        """Parse DraftKings games using legacy event-cell structure."""
-        games = []
+    def parse_event_cells(self, page: Page) -> list[Market]:
+        """
+        Parse the legacy DraftKings "event-cell" DOM and convert found game rows into Market objects.
+
+        Attempts to locate team name elements in pairs (away, home), extracts nearby outcome cells for moneyline, spread, and totals, and builds corresponding Market entries. Returns an empty list if no games are found or if parsing fails.
+
+        Returns:
+            list[Market]: Parsed markets for each detected game; empty list when none are found or on parse errors.
+        """
+        markets: list[Market] = []
 
         try:
             # Team name elements — DraftKings uses event-cell__name-text (stable partial class)
@@ -633,8 +923,15 @@ class DraftKingsScraper:
 
                     # Odds: try aria-label on outcome buttons (stable semantic attribute)
                     moneyline = 'N/A'
+                    home_moneyline = 'N/A'
                     spread = 'N/A'
+                    spread_odds = 'N/A'
+                    home_spread = 'N/A'
+                    home_spread_odds = 'N/A'
                     over_under = 'N/A'
+                    over_odds = 'N/A'
+                    under_total = 'N/A'
+                    under_odds = 'N/A'
 
                     # Find outcome cells near these team elements
                     game_block = team_elements[team_index].query_selector(
@@ -648,36 +945,73 @@ class DraftKingsScraper:
                             "button[aria-label*='Moneyline'], "
                             "[class*='sportsbook-outcome-cell__body']"
                         )
-                        spread, moneyline, over_under = self.parse_markets(outcome_cells, away_team)
+                        (
+                            spread,
+                            spread_odds,
+                            home_spread,
+                            home_spread_odds,
+                            moneyline,
+                            home_moneyline,
+                            over_under,
+                            over_odds,
+                            under_total,
+                            under_odds,
+                        ) = self._extract_raw_markets(outcome_cells, away_team, home_team)
 
-                    games.append(
-                        {
-                            'date': datetime.now().strftime('%Y-%m-%d'),
-                            'home_team': home_team,
-                            'away_team': away_team,
-                            'matchup': f'{away_team} @ {home_team}',
-                            'spread': spread,
-                            'moneyline': moneyline,
-                            'home_moneyline': 'N/A',
-                            'over_under': over_under,
-                            'source': 'DraftKings',
-                        }
+                    markets.extend(
+                        self._build_markets(
+                            away_team,
+                            home_team,
+                            None,
+                            spread,
+                            spread_odds,
+                            home_spread,
+                            home_spread_odds,
+                            moneyline,
+                            home_moneyline,
+                            over_under,
+                            over_odds,
+                            under_total,
+                            under_odds,
+                        )
                     )
 
                 except Exception as error:
                     logger.warning('Failed to parse DraftKings game row: {}', error)
                     continue
 
-            return games
+            return markets
 
         except Exception as error:
             logger.warning('Error parsing DraftKings event cells: {}', error)
             return []
 
-    def parse_markets(self, outcome_cells, team_name: str) -> tuple[str, str, str]:
-        spread = 'N/A'
-        moneyline = 'N/A'
-        over_under = 'N/A'
+    def _extract_raw_markets(
+        self, outcome_cells, away_team: str, home_team: str
+    ) -> tuple[str, str, str, str, str, str, str, str, str, str]:
+        """
+        Extract raw spread, moneyline, and total values from event-cell outcome buttons for both teams.
+
+        Parameters:
+            outcome_cells (iterable): Iterable of DOM element-like objects supporting .inner_text() and .get_attribute().
+            away_team (str): Away team name used to disambiguate away-side spread rows.
+            home_team (str): Home team name used to disambiguate home-side spread rows.
+
+        Returns:
+            tuple[str, ...]: A 10-tuple (away_spread, away_spread_odds, home_spread, home_spread_odds,
+                away_moneyline, home_moneyline, over_total, over_odds, under_total, under_odds).
+                Each value is the extracted string or 'N/A' if not found.
+        """
+        away_spread = 'N/A'
+        away_spread_odds = 'N/A'
+        home_spread = 'N/A'
+        home_spread_odds = 'N/A'
+        away_moneyline = 'N/A'
+        home_moneyline = 'N/A'
+        over_total = 'N/A'
+        over_odds = 'N/A'
+        under_total = 'N/A'
+        under_odds = 'N/A'
 
         for cell in outcome_cells:
             text = cell.inner_text().strip()
@@ -685,29 +1019,54 @@ class DraftKingsScraper:
             market_text = f'{label} {text}'
             market_text_lower = market_text.lower()
 
-            if moneyline == 'N/A' and 'moneyline' in market_text_lower:
+            if 'moneyline' in market_text_lower:
                 odds = extract_first_american_odds(market_text)
                 if odds:
-                    moneyline = odds
+                    if away_team.lower() in market_text_lower:
+                        away_moneyline = odds
+                    elif home_team.lower() in market_text_lower:
+                        home_moneyline = odds
 
-            if (
-                spread == 'N/A'
-                and 'spread' in market_text_lower
-                and team_name.lower() in market_text_lower
-            ):
+            if 'spread' in market_text_lower:
                 value = extract_first_signed_number(market_text)
+                odds = extract_first_american_odds(market_text)
                 if value:
-                    spread = value
+                    if away_team.lower() in market_text_lower:
+                        away_spread = value
+                        if odds:
+                            away_spread_odds = odds
+                    elif home_team.lower() in market_text_lower:
+                        home_spread = value
+                        if odds:
+                            home_spread_odds = odds
 
-            if over_under == 'N/A' and (
-                'total' in market_text_lower
-                or re.search(r'\b(over|under|o|u)\b', market_text_lower)
+            if 'total' in market_text_lower or re.search(
+                r'\b(over|under|o|u)\b', market_text_lower
             ):
                 value = extract_first_total(market_text)
+                odds = extract_first_american_odds(market_text)
                 if value:
-                    over_under = value
+                    if 'over' in market_text_lower:
+                        over_total = value
+                        if odds:
+                            over_odds = odds
+                    elif 'under' in market_text_lower:
+                        under_total = value
+                        if odds:
+                            under_odds = odds
 
-        return spread, moneyline, over_under
+        return (
+            away_spread,
+            away_spread_odds,
+            home_spread,
+            home_spread_odds,
+            away_moneyline,
+            home_moneyline,
+            over_total,
+            over_odds,
+            under_total,
+            under_odds,
+        )
 
     def _parse_futures_buttons(self, page, bet_type: str) -> list[dict]:
         results: list[dict] = []
@@ -740,11 +1099,22 @@ class DraftKingsScraper:
         return results
 
     def parse_futures_category(self, page, bet_type: str) -> list[dict]:
-        """Parse a DraftKings futures betting category.
+        """
+        Parse futures betting entries from a DraftKings futures category page.
 
-        HTML structure: sportsbook-accordion__wrapper sections contain
-        content-sports-hierarchy-teams__team rows, each with a team name
-        <a> tag and an American-odds button.
+        Extracts team names and their American odds from accordion-style futures listings. Each result is a dict with the team's display name, the extracted American odds (or 'N/A' when none found), the provided bet_type, and the source identifier.
+
+        Parameters:
+            page: Playwright Page representing the loaded futures category.
+            bet_type (str): Category label to assign to each returned entry (e.g., 'champion').
+
+        Returns:
+            list[dict]: A list of dictionaries with keys:
+                - 'team' (str): Team name as displayed on the page.
+                - 'odds' (str): American odds string if found, otherwise 'N/A'.
+                - 'bet_type' (str): The provided bet_type value.
+                - 'source' (str): Fixed string 'DraftKings'.
+            If no entries are parsed from the accordion structure, an alternative button-based extraction is attempted and its results are returned.
         """
         results: list[dict] = []
 

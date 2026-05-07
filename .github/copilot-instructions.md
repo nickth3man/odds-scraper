@@ -21,15 +21,20 @@ Prioritize **architectural consistency, correctness, performance, and scraper re
 ### 2. Architecture & Scraper Resilience
 - **ESPN Scraper (`src/backend/scrapers/espn/`)**: Check that parsing relies on the JSON API first, with the scoreboard as a fallback. Defensive `except` blocks are expected.
 - **DraftKings Scraper (`src/backend/scrapers/draftkings/`)**: Playwright operations must use `try/finally` blocks to ensure proper cleanup. Check that it implements the 3-layer parser fallback (parsel -> cb-market -> event-cells).
+- **Domain Models (`src/backend/models/domain.py`)**: Scrapers emit `list[Market]` with `Outcome` and `NormalizedOdds`; do not reintroduce game-dict schemas for new scraper outputs.
 - **EV/Kelly Models (`src/backend/models/`)**: Ensure the Kelly criterion is capped at 5% of the bankroll. `parse_american_odds()` must return `None` for malformed input, not raise an exception.
+- **Odds Enrichment (`src/backend/models/odds_enrichment.py`)**: Invalid or unavailable probabilities must drop the row; do not add manual/default fallback probabilities.
+- **NBA Data/Modeling (`src/backend/data/`)**: Review for target leakage, chronological splits, de-vigged market baselines, and probabilistic metrics (Brier/log-loss). Accuracy alone is not sufficient for betting models.
 - **Frontend (`src/frontend/gui/`)**: Ensure NiceGUI dashboard code does not block the async event loop with synchronous calls.
 
 ### 3. Testing Requirements
 - **Offline Tests Only**: Flag any test in `tests/` that makes a live network call or calls `sync_playwright().start()`. Tests must use offline fixtures (HTML/JSON) and `FakeElement`/`FakePage` from `tests/browser_fakes.py`.
 - **Parser Determinism**: Ensure parser tests are deterministic and fixture-based. If a PR modifies parsing logic, verify that corresponding offline fixtures (`src/backend/fixtures/`) are updated or added.
+- **Data/Model Tests**: Tests may use small synthetic SQLite fixtures. They must not depend on the large `raw/` dataset unless explicitly invoked as local manual QA.
 
 ### 4. Security & Credentials
 - **[BLOCKER]**: Flag immediately if any cookies, authorization headers, account data, local browser profiles, or private location data are being committed.
+- **[BLOCKER]**: Flag raw datasets, generated model artifacts, or sportsbook account/location data committed to the repository.
 - **[BLOCKER]**: Flag introductions of paid CI tools, paid security scanners, or paid SaaS dependencies (beyond CodeRabbit, Sourcery, and Qodo).
 
 ## How to Write Review Comments

@@ -70,31 +70,38 @@ class TeamEnrichmentService:
 
     @staticmethod
     def _current_nba_season() -> str:
-        """Compute the current NBA season string based on today's date."""
+        """
+        Return the NBA season identifier in 'YYYY-YY' format for today's date.
+
+        If today's month is October or later the season start year is the current year; otherwise the start year is the previous year.
+
+        Returns:
+            season (str): Season string formatted as 'YYYY-YY', e.g., '2024-25'.
+        """
         from datetime import date
 
         today = date.today()
         start_year = today.year if today.month >= 10 else today.year - 1
         return f'{start_year}-{str(start_year + 1)[2:]}'
 
-    def __init__(self, cache_ttl: float = 14400.0):
+    def __init__(self, cache_ttl: float = 14400.0) -> None:
         """
-        Initialize the TeamEnrichmentService and create a TTL cache for team statistics.
+        Create a TeamEnrichmentService and initialize its TTL cache.
 
         Parameters:
-            cache_ttl (float): Time-to-live for cached entries in seconds; defaults to 14400.0 (4 hours).
+            cache_ttl (float): Time-to-live for cached entries in seconds (default 14400.0, 4 hours).
         """
         self._cache: TTLCache[dict[str, TeamStats]] = TTLCache(default_ttl=cache_ttl)
 
     def get_team_stats(self, team_name: str) -> TeamStats | None:
         """
-        Retrieve aggregated TeamStats for a team given a team name.
+        Get aggregated TeamStats for a team identified by its display name or a substring of its display name.
 
         Parameters:
-            team_name (str): Team display name (or substring). The function will attempt an exact name-to-abbreviation resolution and, if that fails, fall back to a substring match against known team display names.
+            team_name (str): Official team display name, 3-letter tricode, or any substring of the display name used to locate the team.
 
         Returns:
-            TeamStats | None: The matching TeamStats instance if found, `None` otherwise.
+            TeamStats | None: `TeamStats` for the matched team if found, `None` otherwise.
         """
         all_stats = self._get_all_team_stats()
         if all_stats is None:
@@ -110,12 +117,12 @@ class TeamEnrichmentService:
 
     def _get_all_team_stats(self) -> dict[str, TeamStats] | None:
         """
-        Retrieve all team statistics, preferring cached results when available.
+        Retrieve a mapping of all teams' aggregated statistics, using a cached dataset when available.
 
-        Checks the internal cache key 'all_teams' and returns it if present; otherwise attempts to fetch fresh data from the NBA API. Returns `None` if fetching fails.
+        If no cached data exists the method attempts to fetch fresh data from the NBA API; returns `None` if retrieval fails.
 
         Returns:
-            dict[str, TeamStats] | None: Mapping from team three-letter abbreviation to `TeamStats`, or `None` if retrieval failed.
+            dict[str, TeamStats] | None: Mapping from three-letter team abbreviation to `TeamStats`, or `None` if data could not be obtained.
         """
         cached = self._cache.get('all_teams')
         if cached is not None:
@@ -146,6 +153,7 @@ class TeamEnrichmentService:
         advanced_rows = advanced.get_dict()['resultSets'][0]['rowSet']
         advanced_headers = advanced.get_dict()['resultSets'][0]['headers']
 
+        team_id_idx = advanced_headers.index('TEAM_ID')
         team_idx = advanced_headers.index('TEAM_NAME')
         abbr_idx = advanced_headers.index('TEAM_ABBREVIATION')
         off_idx = advanced_headers.index('OFF_RATING')
@@ -155,8 +163,9 @@ class TeamEnrichmentService:
 
         advanced_data: dict[str, dict[str, Any]] = {}
         for row in advanced_rows:
-            abbr = row[abbr_idx]
-            advanced_data[abbr] = {
+            team_id = str(row[team_id_idx])
+            abbr = str(row[abbr_idx])
+            advanced_data[team_id] = {
                 'team_name': row[team_idx],
                 'abbreviation': abbr,
                 'off_rating': row[off_idx],
@@ -174,14 +183,17 @@ class TeamEnrichmentService:
 
         w_idx = standings_headers.index('WINS')
         l_idx = standings_headers.index('LOSSES')
-        wp_idx = standings_headers.index('WinPct')
+        wp_idx = standings_headers.index('WinPCT')
         tid_idx = standings_headers.index('TeamID')
 
         for row in standings_rows:
-            abbr = row[tid_idx]
-            advances = advanced_data.get(abbr, {})
+            team_id = str(row[tid_idx])
+            advances = advanced_data.get(team_id)
+            if advances is None:
+                continue
+            abbr = str(advances['abbreviation'])
             stats_dict[abbr] = TeamStats(
-                team_name=advances.get('team_name', abbr),
+                team_name=str(advances['team_name']),
                 abbreviation=abbr,
                 wins=row[w_idx],
                 losses=row[l_idx],

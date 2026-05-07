@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Iterator
 
 import pytest
 from loguru import logger
@@ -11,14 +12,14 @@ from tests.browser_fakes import FakeElement, FakePage  # noqa: F401
 
 
 @pytest.fixture
-def loguru_to_stderr(capsys: pytest.CaptureFixture[str]):
+def loguru_to_stderr(capsys: pytest.CaptureFixture[str]) -> Iterator[None]:
     """
-    Attach a temporary Loguru sink that directs logger output to sys.stderr for the duration of a test.
+    Temporarily route Loguru logger output to sys.stderr for the duration of a test.
 
-    The fixture adds a Loguru handler using the format '{message}', yields control so the test runs with the sink active, and removes the handler after the test completes.
+    This pytest fixture adds a Loguru sink that directs logger output to sys.stderr while the test runs so pytest's capture mechanisms can record Loguru messages; the sink is removed after the test completes.
 
     Parameters:
-        capsys (pytest.CaptureFixture[str]): Pytest capture fixture used to capture and inspect sys.stderr output during the test.
+        capsys (pytest.CaptureFixture[str]): Pytest capture fixture (provided for typing/context; pytest captures sys.stderr).
     """
     handler_id = logger.add(sys.stderr, format='{message}')
     yield

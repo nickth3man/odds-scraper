@@ -49,6 +49,9 @@ coverage.xml
 # Historical root fixture dumps
 /fixtures/
 
+# Raw data directory
+/raw/
+
 # Large backend HTML snapshots; keep required regression fixtures tracked explicitly
 src/backend/fixtures/*.html
 !src/backend/fixtures/dk-game-lines.html

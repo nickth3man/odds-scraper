@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import TypeVar
-
-T = TypeVar('T')
 
 
 class TTLCache[T]:
     """Thread-safe TTL cache. Team stats cache for 4 hours, standings for 24 hours."""
 
-    def __init__(self, default_ttl: float = 14400.0):
+    def __init__(self, default_ttl: float = 14400.0) -> None:
         """
         Initialize the TTLCache with an optional default time-to-live for entries and an empty internal store.
 
@@ -25,12 +22,12 @@ class TTLCache[T]:
 
     def get(self, key: str) -> T | None:
         """
-        Retrieve the cached value for `key` if it exists and has not expired.
+        Retrieve the cached value for the given key if present and not expired.
 
-        If the stored entry has expired, it is removed from the cache and `None` is returned.
+        If the entry exists but has expired, it is removed from the cache.
 
         Returns:
-            The cached value for `key` if present and not expired, `None` otherwise.
+            The cached value associated with `key` if present and not expired, `None` otherwise.
         """
         with self._lock:
             entry = self._store.get(key)
@@ -44,14 +41,14 @@ class TTLCache[T]:
 
     def set(self, key: str, value: T, ttl: float | None = None) -> None:
         """
-        Store a value in the cache under the given key with an associated time-to-live.
+        Store a value under the given key with an expiration based on the provided TTL or the cache's default.
 
-        If `ttl` is provided it overrides the cache's default TTL; `ttl` is specified in seconds and controls how long the entry remains valid before expiring.
+        The entry will be considered expired after `ttl` seconds from now or after the cache's default TTL when `ttl` is `None`.
 
         Parameters:
-                key (str): Cache key to store the value under.
-                value (T): Value to cache.
-                ttl (float | None): Optional time-to-live in seconds; when `None` the cache's default TTL is used.
+            key (str): Cache key.
+            value (T): Value to store.
+            ttl (float | None): Optional time-to-live in seconds; if `None`, the cache's default TTL is used.
         """
         with self._lock:
             expires_at = time.monotonic() + (ttl if ttl is not None else self._default_ttl)
