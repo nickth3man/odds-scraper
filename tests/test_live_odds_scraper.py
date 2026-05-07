@@ -22,10 +22,10 @@ class _JsonResponse:
 def _load_fixture(filename: str) -> dict:
     """
     Load a JSON fixture file from the repository's test fixtures directory.
-    
+
     Parameters:
         filename (str): Name of the fixture file (including extension) located in src/backend/fixtures.
-    
+
     Returns:
         dict: Parsed JSON content of the fixture file.
     """
@@ -37,7 +37,7 @@ def _load_fixture(filename: str) -> dict:
 def _make_sample_market() -> Market:
     """
     Create a sample ESPN-style head-to-head Market for use in tests.
-    
+
     Returns:
         market (Market): A H2H Market for an NBA event with two outcomes:
             - "OKC Thunder" with american odds -135
@@ -69,7 +69,7 @@ def test_get_all_games_resets_previous_results(monkeypatch):
     def scrape_espn(self):
         """
         Append a market to the scraper's internal games list and return it as a single-item list.
-        
+
         Returns:
             list: A list containing the appended market.
         """
@@ -79,7 +79,7 @@ def test_get_all_games_resets_previous_results(monkeypatch):
     def scrape_no_draftkings_games(self):
         """
         Produce an empty list indicating no DraftKings games are available.
-        
+
         Returns:
             list: An empty list representing no DraftKings games.
         """
@@ -179,6 +179,13 @@ def test_parse_draftkings_games_extracts_spread_moneyline_and_total():
             },
         ),
         FakeElement(
+            text='Boston Celtics +2.5\n-110',
+            attrs={
+                'aria-label': 'Boston Celtics Spread +2.5 -110',
+                'class': 'sportsbook-outcome-cell__body',
+            },
+        ),
+        FakeElement(
             text='OKC Thunder\n-135',
             attrs={
                 'aria-label': 'OKC Thunder Moneyline -135',
@@ -186,9 +193,23 @@ def test_parse_draftkings_games_extracts_spread_moneyline_and_total():
             },
         ),
         FakeElement(
+            text='Boston Celtics\n+115',
+            attrs={
+                'aria-label': 'Boston Celtics Moneyline +115',
+                'class': 'sportsbook-outcome-cell__body',
+            },
+        ),
+        FakeElement(
             text='Over 223.5\n-110',
             attrs={
                 'aria-label': 'Over 223.5 Total Points -110',
+                'class': 'sportsbook-outcome-cell__body',
+            },
+        ),
+        FakeElement(
+            text='Under 223.5\n-110',
+            attrs={
+                'aria-label': 'Under 223.5 Total Points -110',
                 'class': 'sportsbook-outcome-cell__body',
             },
         ),
@@ -243,7 +264,7 @@ def test_scrape_espn_uses_scoreboard_fallback_when_header_api_returns_non_json(m
         def json(self):
             """
             Mock ESPN-style JSON payload representing a single event with odds.
-            
+
             The returned dictionary mimics an ESPN scoreboard/header response containing one event:
             - events: list of event objects
               - id (str): event identifier ('401869412')
@@ -254,7 +275,7 @@ def test_scrape_espn_uses_scoreboard_fallback_when_header_api_returns_non_json(m
                   - moneyline: numeric american-style odds under away.close.odds (-135) and home.close.odds (120)
                   - pointSpread: away.close.line present (-2.5)
                   - total: over.close.line present (223.5)
-            
+
             Returns:
                 dict: A synthetic ESPN-style payload matching the structure described above.
             """
@@ -283,10 +304,12 @@ def test_scrape_espn_uses_scoreboard_fallback_when_header_api_returns_non_json(m
                                             'home': {'close': {'odds': 120}},
                                         },
                                         'pointSpread': {
-                                            'away': {'close': {'line': -2.5}},
+                                            'away': {'close': {'line': -2.5, 'odds': -110}},
+                                            'home': {'close': {'line': 2.5, 'odds': -110}},
                                         },
                                         'total': {
-                                            'over': {'close': {'line': 223.5}},
+                                            'over': {'close': {'line': 223.5, 'odds': -110}},
+                                            'under': {'close': {'line': 223.5, 'odds': -110}},
                                         },
                                     }
                                 ],
@@ -332,14 +355,14 @@ def test_parse_espn_header_api_fixture():
     def find(event_id: str, mtype: MarketType) -> Market:
         """
         Finds the Market with the given event identifier and market type.
-        
+
         Parameters:
             event_id (str): Identifier of the event to match.
             mtype (MarketType): Type of market to match.
-        
+
         Returns:
             Market: The first Market whose `event_id` equals `event_id` and whose `market_type` equals `mtype`.
-        
+
         Raises:
             StopIteration: If no matching Market is found.
         """
@@ -404,13 +427,13 @@ def test_parse_espn_scoreboard_api_fixture():
     def find(mtype: MarketType) -> Market:
         """
         Select the first market from the surrounding `markets` collection matching the given market type.
-        
+
         Parameters:
             mtype (MarketType): The market type to find.
-        
+
         Returns:
             Market: The first Market whose `market_type` equals `mtype`.
-        
+
         Raises:
             StopIteration: If no matching market is found.
         """
@@ -475,7 +498,7 @@ def test_scrape_espn_nba_odds_returns_empty_when_header_api_has_no_games(
     def return_empty_sports(*_args, **_kwargs):
         """
         Produce a fake HTTP JSON response for tests with an empty 'sports' list.
-        
+
         Returns:
             _JsonResponse: Response whose JSON payload is {'sports': []}.
         """
@@ -641,6 +664,16 @@ def test_parse_draftkings_cb_market_structure():
         FakeElement(text='-110', attrs={'data-testid': 'button-odds-market-board'}),
     ]
 
+    under_button = FakeElement(
+        text='U 205.5',
+        attrs={'data-testid': 'component-builder-market-button-34077039-0OU84578437U20550_2'},
+    )
+    under_button._children = [
+        FakeElement(text='U', attrs={'data-testid': 'button-title-market-board'}),
+        FakeElement(text='205.5', attrs={'data-testid': 'button-points-market-board'}),
+        FakeElement(text='-110', attrs={'data-testid': 'button-odds-market-board'}),
+    ]
+
     away_moneyline_button = FakeElement(
         text='+215', attrs={'data-testid': 'component-builder-market-button-34077039-0ML84578437_1'}
     )
@@ -670,6 +703,7 @@ def test_parse_draftkings_cb_market_structure():
             away_spread_button,
             home_spread_button,
             over_button,
+            under_button,
             away_moneyline_button,
             home_moneyline_button,
         ],
@@ -770,9 +804,20 @@ def test_parse_draftkings_cb_market_multiple_games():
     away_moneyline_button_1._children = [
         FakeElement(text='+215', attrs={'data-testid': 'button-odds-market-board'}),
     ]
+    home_moneyline_button_1 = FakeElement(
+        text='-265', attrs={'data-testid': 'component-builder-market-button-game1-0ML_3'}
+    )
+    home_moneyline_button_1._children = [
+        FakeElement(text='-265', attrs={'data-testid': 'button-odds-market-board'}),
+    ]
     template1 = FakeElement(
         attrs={'class': 'cb-market__template--2-columns'},
-        children=[away_team_element_1, home_team_element_1, away_moneyline_button_1],
+        children=[
+            away_team_element_1,
+            home_team_element_1,
+            away_moneyline_button_1,
+            home_moneyline_button_1,
+        ],
     )
 
     away_team_element_2 = FakeElement(
@@ -787,15 +832,26 @@ def test_parse_draftkings_cb_market_multiple_games():
     away_moneyline_button_2._children = [
         FakeElement(text='+280', attrs={'data-testid': 'button-odds-market-board'}),
     ]
+    home_moneyline_button_2 = FakeElement(
+        text='-350', attrs={'data-testid': 'component-builder-market-button-game2-0ML_3'}
+    )
+    home_moneyline_button_2._children = [
+        FakeElement(text='-350', attrs={'data-testid': 'button-odds-market-board'}),
+    ]
     template2 = FakeElement(
         attrs={'class': 'cb-market__template--2-columns'},
-        children=[away_team_element_2, home_team_element_2, away_moneyline_button_2],
+        children=[
+            away_team_element_2,
+            home_team_element_2,
+            away_moneyline_button_2,
+            home_moneyline_button_2,
+        ],
     )
 
     page = FakePage(elements=[template1, template2])
     markets = DraftKingsScraper().parse_cb_market(page)
 
-    # Each game produces 1 H2H market (only away moneyline provided, no spread/total)
+    # Each game produces 1 H2H market (moneyline for both sides, no spread/total)
     assert len(markets) == 2
     # Check teams via H2H outcomes
     game1_h2h = markets[0]

@@ -72,9 +72,9 @@ class TeamEnrichmentService:
     def _current_nba_season() -> str:
         """
         Return the NBA season identifier in 'YYYY-YY' format for today's date.
-        
+
         If today's month is October or later the season start year is the current year; otherwise the start year is the previous year.
-        
+
         Returns:
             season (str): Season string formatted as 'YYYY-YY', e.g., '2024-25'.
         """
@@ -84,10 +84,10 @@ class TeamEnrichmentService:
         start_year = today.year if today.month >= 10 else today.year - 1
         return f'{start_year}-{str(start_year + 1)[2:]}'
 
-    def __init__(self, cache_ttl: float = 14400.0):
+    def __init__(self, cache_ttl: float = 14400.0) -> None:
         """
         Create a TeamEnrichmentService and initialize its TTL cache.
-        
+
         Parameters:
             cache_ttl (float): Time-to-live for cached entries in seconds (default 14400.0, 4 hours).
         """
@@ -96,10 +96,10 @@ class TeamEnrichmentService:
     def get_team_stats(self, team_name: str) -> TeamStats | None:
         """
         Get aggregated TeamStats for a team identified by its display name or a substring of its display name.
-        
+
         Parameters:
             team_name (str): Official team display name, 3-letter tricode, or any substring of the display name used to locate the team.
-        
+
         Returns:
             TeamStats | None: `TeamStats` for the matched team if found, `None` otherwise.
         """
@@ -118,9 +118,9 @@ class TeamEnrichmentService:
     def _get_all_team_stats(self) -> dict[str, TeamStats] | None:
         """
         Retrieve a mapping of all teams' aggregated statistics, using a cached dataset when available.
-        
+
         If no cached data exists the method attempts to fetch fresh data from the NBA API; returns `None` if retrieval fails.
-        
+
         Returns:
             dict[str, TeamStats] | None: Mapping from three-letter team abbreviation to `TeamStats`, or `None` if data could not be obtained.
         """

@@ -211,12 +211,12 @@ class HttpClient:
     def _resolve_domain(self, url: str) -> str:
         """
         Compute an effective domain key for per-domain rate limiting.
-        
+
         Attempts to extract a registrable/hostinfo-based domain from the given URL; if that is not available, falls back to the URL's network location (netloc).
-        
+
         Parameters:
             url (str): The URL to extract the domain key from.
-        
+
         Returns:
             domain (str): The effective domain key used for rate limiting (e.g., "espn.com").
         """
@@ -228,7 +228,7 @@ class HttpClient:
     def _wait_for_domain(self, domain: str) -> None:
         """
         Enforce per-domain minimum inter-request delay by sleeping until the configured interval has passed since the last request for the given domain.
-        
+
         Parameters:
             domain (str): Effective domain key used to track and apply per-domain rate limiting.
         """
@@ -244,7 +244,7 @@ class HttpClient:
     def _log_retry_attempt(retry_state) -> None:
         """
         Log a retry warning before tenacity sleeps between attempts.
-        
+
         Parameters:
             retry_state (tenacity.RetryCallState): Retry state provided by tenacity callbacks; used to obtain the current attempt number, the configured maximum attempts, and the exception (if any) for logging.
         """

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from loguru import logger
 from nicegui import APIRouter, run, ui
 
 from backend.enrichment import TeamEnrichmentService
@@ -27,6 +28,9 @@ SOURCE_BADGE_SLOT = """
 """
 
 
+_enrichment = TeamEnrichmentService()
+
+
 @router.page('/odds')
 def live_odds() -> None:
     """Render the Live Odds page with multi-source scraping and EV analysis.
@@ -34,7 +38,7 @@ def live_odds() -> None:
     Provides buttons to scrape ESPN and DraftKings odds and a searchable table
     with per-row expected-value enrichment for bet outcomes with valid data.
     """
-    enrichment = TeamEnrichmentService()
+    enrichment = _enrichment
 
     with ui.column().classes('w-full p-6 gap-4'):
         with ui.row().classes('items-center gap-2'):
@@ -61,6 +65,7 @@ def live_odds() -> None:
                 table.update_rows(rows)
                 status.text = f'Loaded {len(games)} ESPN games.'
             except Exception:
+                logger.exception('ESPN odds fetch failed')
                 status.text = 'Error fetching ESPN odds.'
             finally:
                 espn_button.enable()
@@ -68,7 +73,7 @@ def live_odds() -> None:
         async def scrape_draftkings() -> None:
             """
             Scrape live DraftKings odds and merge the enriched rows into the page table.
-            
+
             Disables the DraftKings button while running, updates the status text to indicate progress or error, performs the DraftKings scrape and enrichment, replaces the table rows with the merged results on success, and re-enables the button when finished.
             """
             draftkings_button.disable()
@@ -85,6 +90,7 @@ def live_odds() -> None:
                 table.update_rows(rows)
                 status.text = f'Loaded {len(games)} DraftKings games.'
             except Exception:
+                logger.exception('DraftKings odds fetch failed')
                 status.text = 'Error fetching DraftKings odds.'
             finally:
                 draftkings_button.enable()

@@ -32,7 +32,7 @@ class LiveOddsScraper:
     def scrape_draftkings_odds(self):
         """
         Retrieve live odds from DraftKings and append any returned markets to the scraper's game list.
-        
+
         Returns:
             list[Market] | None: The markets returned by the DraftKings scraper, or `None` if no data was returned.
         """
@@ -45,10 +45,10 @@ class LiveOddsScraper:
     def parse_draftkings_html(html: str) -> list[Market]:
         """
         Parse DraftKings HTML into a list of Market objects for offline use.
-        
+
         Parameters:
             html (str): Raw HTML markup from a DraftKings odds page.
-        
+
         Returns:
             list[Market]: Parsed market records extracted from the HTML.
         """
@@ -84,9 +84,9 @@ class LiveOddsScraper:
     def display_games(self, games, source=''):
         """
         Log a formatted table of game odds at debug level.
-        
+
         Parameters:
-            games (Iterable[dict | GameOdds]): Sequence of game records to display; each item will be converted to a pandas DataFrame row.
+            games (Iterable[Market]): Sequence of Market objects to display; each item will be converted to a pandas DataFrame row.
             source (str): Optional source label included in the log context (e.g., "ESPN", "DRAFTKINGS").
         """
         if not games:
@@ -104,9 +104,9 @@ class LiveOddsScraper:
     def get_all_games(self):
         """
         Orchestrates scraping NBA odds from ESPN and DraftKings and returns the aggregated results.
-        
+
         Runs each source scraper, stores combined results in self.games, and logs the run using a per-run `scrape_session` context attached to log entries. If a source returns results, those results are displayed via display_games.
-        
+
         Returns:
             list[Market]: Aggregated list of scraped markets (may be empty).
         """

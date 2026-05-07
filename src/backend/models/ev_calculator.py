@@ -13,13 +13,13 @@ class EVCalculator:
     def convert_american_to_probability(self, american_odds: int | float) -> float:
         """
         Convert American-style betting odds to an implied probability between 0 and 1.
-        
+
         Parameters:
             american_odds (int | float): American odds (negative for favorites, positive for underdogs). A value of 0 is treated as a guaranteed outcome.
-        
+
         Returns:
             float: Implied probability in the range [0.0, 1.0].
-        
+
         Raises:
             TypeError: If `american_odds` is not an int or float.
         """
@@ -39,15 +39,15 @@ class EVCalculator:
     ) -> float:
         """
         Compute the expected monetary value of a single bet.
-        
+
         Calculates expected value as (model_probability * payout) - ((1 - model_probability) * stake),
         where `payout` is the profit on a winning bet derived from American odds.
-        
+
         Args:
             model_probability (float): Predicted probability of winning, between 0.0 and 1.0.
             american_odds (int | float): Sportsbook American odds (e.g., -110, 150).
             stake (float): Amount wagered in dollars.
-        
+
         Returns:
             float: Expected value in dollars (positive means expected profit, negative means expected loss).
         """
@@ -69,25 +69,25 @@ class EVCalculator:
     ) -> float:
         """
         Calculate the expected monetary value of placing a stake on an outcome described by a NormalizedOdds object.
-        
+
         Parameters:
             model_probability (float): The model's estimated probability of the outcome occurring (0.0–1.0).
             odds (NormalizedOdds): An object providing market odds; the method uses the `american` field from this object.
             stake (float): The wager amount in dollars (default is 100).
-        
+
         Returns:
             float: Expected value in dollars (positive indicates an expected profit, negative indicates an expected loss).
         """
         return self.calculate_expected_value(model_probability, odds.american, stake)
 
     def evaluate_bet(
-        self, team: str, model_probability: float, american_odds: int, stake: float = 100
+        self, team: str, model_probability: float, american_odds: int | float, stake: float = 100
     ) -> dict:
         """
         Evaluate a proposed bet, append the formatted analysis to self.bets, and return the analysis dictionary.
-        
+
         The returned dictionary contains human-readable, formatted fields suitable for reporting.
-        
+
         Returns:
             dict: Analysis with keys:
                 - team (str): Team identifier passed to the function.
@@ -132,11 +132,11 @@ class EVCalculator:
     def calculate_kelly_criterion(self, win_probability: float, american_odds: int) -> float:
         """
         Compute the recommended Kelly fraction of bankroll to wager for a given win probability and American odds, capped at 5%.
-        
+
         Parameters:
             win_probability (float): Probability of winning expressed as a decimal between 0 and 1.
             american_odds (int): American-format odds (negative for favorites, positive for underdogs).
-        
+
         Returns:
             float: Fraction of bankroll to stake (e.g., 0.02 for 2%). Returns 0.0 if the formula yields a negative fraction; otherwise the value is capped at 0.05 (5%).
         """
@@ -152,7 +152,7 @@ class EVCalculator:
     def display_bet_analysis(self, bets: list[dict]):
         """
         Log a concise debug summary for each bet in the provided list.
-        
+
         Parameters:
             bets (list[dict]): List of bet result dictionaries. Each dictionary must contain the keys:
                 'team', 'model_probability', 'american_odds', 'expected_value_per_stake', and 'recommendation'.
@@ -173,10 +173,10 @@ class EVCalculator:
 def devig_market(market: Market) -> list[float]:
     """
     Compute de-vigged ("true") probabilities for a market by normalizing each outcome's implied probability so the probabilities sum to 1.
-    
+
     Parameters:
         market (Market): Market object whose outcomes expose `price.implied_probability` for each outcome.
-    
+
     Returns:
         list[float]: A list of de-vigged probabilities corresponding to market.outcomes.
             - Returns an empty list if `market.outcomes` is empty.

@@ -12,13 +12,13 @@ from backend.scrapers.base import BaseScraper
 class OddsScraper(BaseScraper):
     """Scrapes NBA odds from ESPN and other sportsbooks"""
 
-    def __init__(self, config_file: str = 'config.json'):
+    def __init__(self, config_file: str = 'config.json') -> None:
         """
         Initialize an OddsScraper instance and load its configuration.
-        
+
         Parameters:
-            config_file (str): Path to a JSON configuration file that controls enabled sportsbooks and scraper behavior; defaults to 'config.json'. If the file cannot be found or parsed, an empty configuration will be used.
-        
+            config_file (str): Path to a JSON configuration file that controls enabled sportsbooks and scraper behavior; defaults to 'config.json'. If the file cannot be found, an empty configuration will be used.
+
         Notes:
             Initializes the following instance attributes:
               - scraped_odds: empty list to hold generated Market objects.
@@ -31,12 +31,12 @@ class OddsScraper(BaseScraper):
     def load_config(self, config_file: str) -> dict:
         """
         Load and parse a JSON configuration file.
-        
+
         If the file cannot be found, returns an empty dictionary.
-        
+
         Parameters:
             config_file (str): Path to the JSON configuration file.
-        
+
         Returns:
             dict: Parsed configuration object, or an empty dict if the file was not found.
         """
@@ -46,11 +46,16 @@ class OddsScraper(BaseScraper):
         except FileNotFoundError:
             logger.warning('Config file not found', path=config_file)
             return {}
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning(
+                'Config file invalid; using empty config', path=config_file, error=str(exc)
+            )
+            return {}
 
     def scrape(self) -> list[Market]:
         """
         Retrieve normalized betting markets for the current slate.
-        
+
         Returns:
             list[Market]: A list of normalized Market objects collected from enabled sportsbooks per the scraper configuration.
         """
@@ -59,9 +64,9 @@ class OddsScraper(BaseScraper):
     def scrape_espn_odds(self) -> list[Market]:
         """
         Build sample ESPN NBA odds and convert them into normalized Market objects.
-        
+
         For each sample game produces three markets: H2H (moneyline), SPREADS, and TOTALS; outcomes include normalized odds and appropriate point values.
-        
+
         Returns:
             list[Market]: List of Market objects for the ESPN sample data.
         """
@@ -98,9 +103,9 @@ class OddsScraper(BaseScraper):
     def scrape_draftkings_odds(self) -> list[Market]:
         """
         Produce sample NBA betting markets for DraftKings.
-        
+
         Two hard-coded sample games are represented as Market objects covering head-to-head, spreads, and totals markets for each event.
-        
+
         Returns:
             list[Market]: A list of Market objects containing DraftKings sample odds.
         """
@@ -136,7 +141,7 @@ class OddsScraper(BaseScraper):
     def scrape_fanduel_odds(self) -> list[Market]:
         """
         Provide sample FanDuel NBA markets constructed from hard-coded game odds.
-        
+
         Returns:
             list[Market]: A list of Market objects representing the sample FanDuel markets.
         """
@@ -172,12 +177,12 @@ class OddsScraper(BaseScraper):
     def _build_markets(self, games: list[dict], source: str) -> list[Market]:
         """
         Convert a list of game dictionaries into normalized Market objects for H2H, spreads, and totals.
-        
+
         Parameters:
             games (list[dict]): Game dictionaries containing keys: 'game_id', 'away_team', 'home_team',
                 'away_moneyline', 'home_moneyline', 'away_spread', 'home_spread', and 'total'.
             source (str): Sportsbook name used as the prefix for each market `key` and included in the market `name`.
-        
+
         Returns:
             list[Market]: A list of Market objects; three markets are produced per game:
                 - H2H (moneyline) with outcomes for away and home using the provided moneyline odds.
@@ -263,11 +268,11 @@ class OddsScraper(BaseScraper):
     def get_all_odds(self) -> list[Market]:
         """
         Collect aggregated odds from all configured and enabled sportsbooks and update the instance cache.
-        
+
         Calls each enabled sportsbook-specific scraper, combines their returned Market lists into a single list, and assigns that list to `self.scraped_odds`.
-        
+
         Returns:
-        	all_odds (list[Market]): Aggregated list of Market objects collected from enabled sportsbooks.
+                all_odds (list[Market]): Aggregated list of Market objects collected from enabled sportsbooks.
         """
         all_odds: list[Market] = []
 

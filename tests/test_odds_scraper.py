@@ -56,7 +56,7 @@ class TestOddsScraper:
     def test_scrape_draftkings_odds_returns_markets(self):
         """
         Verifies that scrape_draftkings_odds returns a list containing six Market objects.
-        
+
         Asserts the result is a list, every element is an instance of Market, and the list length is 6.
         """
         scraper = OddsScraper()
@@ -80,7 +80,7 @@ class TestOddsScraper:
     def test_scrape_fanduel_odds_keys_start_with_fanduel(self):
         """
         Asserts that every Market returned by scrape_fanduel_odds has a key starting with 'fanduel_'.
-        
+
         This verifies that FanDuel-derived markets are correctly namespaced by prefixing their `key` with 'fanduel_'.
         """
         scraper = OddsScraper()
@@ -90,7 +90,7 @@ class TestOddsScraper:
     def test_markets_have_valid_outcomes(self):
         """
         Verify that markets from each sportsbook contain exactly two outcomes and that each outcome's NormalizedOdds are valid.
-        
+
         Checks performed:
         - Each market has exactly two outcomes.
         - Each outcome has a truthy `name`.

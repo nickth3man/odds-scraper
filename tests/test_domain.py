@@ -152,7 +152,7 @@ class TestDevigMarket:
     def test_devig_empty_market(self):
         """
         Verify devig_market handles a market with no outcomes.
-        
+
         Constructs an empty Market and asserts that calling devig_market on it yields an empty list.
         """
         market = Market(

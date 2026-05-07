@@ -32,12 +32,12 @@ def _normalize_game(game: dict) -> dict:
 class OddsComparison:
     """Compare odds across multiple sportsbooks"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the odds comparison tool"""
         self.odds_by_sportsbook = {}
         self.comparison_results = []
 
-    def add_odds(self, sportsbook: str, odds_list: list[dict]):
+    def add_odds(self, sportsbook: str, odds_list: list[dict]) -> None:
         """
         Store odds for a sportsbook, replacing any previously stored odds for that sportsbook.
 
@@ -48,7 +48,7 @@ class OddsComparison:
         self.odds_by_sportsbook[sportsbook] = odds_list
         logger.info('Odds added', sportsbook=sportsbook, count=len(odds_list))
 
-    def find_best_odds(self, bet_type: str = 'moneyline'):
+    def find_best_odds(self, bet_type: str = 'moneyline') -> list[dict]:
         """
         Compute the best odds for each matchup across all stored sportsbooks.
 
@@ -74,21 +74,19 @@ class OddsComparison:
         if not self.odds_by_sportsbook:
             return results
 
-        # Get all games
-        first_sportsbook_odds = next(iter(self.odds_by_sportsbook.values()))
-        games = {}
-
-        for raw_game in first_sportsbook_odds:
-            game = _normalize_game(raw_game)
-            game_key = f'{game["team"]} vs {game["opponent"]}'
-            if game_key not in games:
-                games[game_key] = {
-                    'date': game['date'],
-                    'team': game['team'],
-                    'opponent': game['opponent'],
-                    'odds': {},
-                }
-
+        # Collect all games from all sportsbooks
+        games: dict[str, dict[str, object]] = {}
+        for odds_list in self.odds_by_sportsbook.values():
+            for raw_game in odds_list:
+                game = _normalize_game(raw_game)
+                game_key = f'{game["team"]} vs {game["opponent"]}'
+                if game_key not in games:
+                    games[game_key] = {
+                        'date': game['date'],
+                        'team': game['team'],
+                        'opponent': game['opponent'],
+                        'odds': {},
+                    }
         # Collect odds from all sportsbooks
         for sportsbook, odds_list in self.odds_by_sportsbook.items():
             for raw_game in odds_list:
@@ -131,7 +129,7 @@ class OddsComparison:
         self.comparison_results = results
         return results
 
-    def display_comparison(self, bet_type: str = 'moneyline'):
+    def display_comparison(self, bet_type: str = 'moneyline') -> None:
         """
         Compute the best-odds comparison for the specified bet type, store the results on the instance, and emit a debug log with summary information.
 
@@ -144,7 +142,7 @@ class OddsComparison:
 
         logger.debug('Comparison display', bet_type=bet_type, game_count=len(results))
 
-    def export_to_csv(self, filename='data/odds_comparison_results.csv'):
+    def export_to_csv(self, filename: str = 'data/odds_comparison_results.csv') -> None:
         """
         Write the stored comparison results to a CSV file.
 
